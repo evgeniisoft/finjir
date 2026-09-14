@@ -484,7 +484,7 @@ function PnlView({ data, expandedRow, setExpandedRow, onDrilldown, drilldownData
                     >
                         <span className={`text-sm ${row.bold ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>{row.label}</span>
                         <span className={`text-sm ${row.bold ? 'font-bold' : 'font-medium'} ${row.green ? 'text-green-600' : row.type === 'expense' ? 'text-red-600' : 'text-gray-900'}`}>
-                            {row.value?.toLocaleString('ru-RU') || 0} ₽
+                            {Math.round(row.value || 0).toLocaleString('ru-RU')} ₽
                         </span>
                     </div>
                     {expandedRow === row.id && (
@@ -525,7 +525,7 @@ function CashFlowView({ data, expandedRow, setExpandedRow, onDrilldown, drilldow
                     >
                         <span className={`text-sm ${row.bold ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>{row.label}</span>
                         <span className={`text-sm ${row.bold ? 'font-bold' : 'font-medium'} ${row.type === 'income' ? 'text-green-600' : row.type === 'expense' ? 'text-red-600' : 'text-gray-900'}`}>
-                            {row.value?.toLocaleString('ru-RU') || 0} ₽
+                            {Math.round(row.value || 0).toLocaleString('ru-RU')} ₽
                         </span>
                     </div>
                     {expandedRow === row.id && (
@@ -561,12 +561,12 @@ function BalanceView({ data, onDrilldown }: any) {
                     <div key={row.id} className="flex justify-between px-2 py-1 cursor-pointer hover:bg-gray-50 rounded"
                         onClick={() => onDrilldown && onDrilldown(row.accountId, 'all', data.company_id)}>
                         <span className="text-sm text-gray-600">{row.label}</span>
-                        <span className="text-sm font-medium text-gray-900">{row.value?.toLocaleString('ru-RU') || 0} ₽</span>
+                        <span className="text-sm font-medium text-gray-900">{Math.round(row.value || 0).toLocaleString('ru-RU')} ₽</span>
                     </div>
                 ))}
                 <div className="flex justify-between px-2 py-1 border-t mt-2">
                     <span className="text-sm font-semibold">Итого активы</span>
-                    <span className="text-sm font-bold">{data.assets?.total?.toLocaleString('ru-RU') || 0} ₽</span>
+                    <span className="text-sm font-bold">{Math.round(data.assets?.total || 0).toLocaleString('ru-RU')} ₽</span>
                 </div>
             </div>
             <div>
@@ -575,31 +575,31 @@ function BalanceView({ data, onDrilldown }: any) {
                     <div key={row.id} className="flex justify-between px-2 py-1 cursor-pointer hover:bg-gray-50 rounded"
                         onClick={() => onDrilldown && onDrilldown(row.accountId, 'all', data.company_id)}>
                         <span className="text-sm text-gray-600">{row.label}</span>
-                        <span className="text-sm font-medium text-red-600">{row.value?.toLocaleString('ru-RU') || 0} ₽</span>
+                        <span className="text-sm font-medium text-red-600">{Math.round(row.value || 0).toLocaleString('ru-RU')} ₽</span>
                     </div>
                 ))}
                 <div className="flex justify-between px-2 py-1 border-t mt-2">
                     <span className="text-sm font-semibold">Итого пассивы</span>
-                    <span className="text-sm font-bold text-red-600">{data.liabilities?.total?.toLocaleString('ru-RU') || 0} ₽</span>
+                    <span className="text-sm font-bold text-red-600">{Math.round(data.liabilities?.total || 0).toLocaleString('ru-RU')} ₽</span>
                 </div>
             </div>
             <div className="border-t pt-4">
                 <div className="flex justify-between px-2 py-1">
                     <span className="text-sm text-gray-600">Уставный капитал</span>
-                    <span className="text-sm font-medium text-gray-900">{data.equity?.capital?.toLocaleString('ru-RU') || 0} ₽</span>
+                    <span className="text-sm font-medium text-gray-900">{Math.round(data.equity?.capital || 0).toLocaleString('ru-RU')} ₽</span>
                 </div>
                 <div className="flex justify-between px-2 py-1">
                     <span className="text-sm text-gray-600">Нераспределённая прибыль</span>
-                    <span className="text-sm font-medium text-green-600">{data.equity?.retained_earnings?.toLocaleString('ru-RU') || 0} ₽</span>
+                    <span className="text-sm font-medium text-green-600">{Math.round(data.equity?.retained_earnings || 0).toLocaleString('ru-RU')} ₽</span>
                 </div>
                 <div className="flex justify-between px-2 py-1 border-t mt-2">
                     <span className="text-sm font-semibold">Итого капитал</span>
-                    <span className="text-sm font-bold text-green-600">{data.equity?.total?.toLocaleString('ru-RU') || 0} ₽</span>
+                    <span className="text-sm font-bold text-green-600">{Math.round(data.equity?.total || 0).toLocaleString('ru-RU')} ₽</span>
                 </div>
                 <div className="flex justify-between px-2 py-1 border-t mt-2">
                     <span className="text-sm font-semibold">Итого пассивы + капитал</span>
                     <span className="text-sm font-bold text-gray-900">
-                        {((data.liabilities?.total || 0) + (data.equity?.total || 0)).toLocaleString('ru-RU')} ₽
+                        {Math.round((data.liabilities?.total || 0) + (data.equity?.total || 0)).toLocaleString('ru-RU')} ₽
                     </span>
                 </div>
             </div>
@@ -878,7 +878,7 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
                                     }
                                     return (
                                         <td key={dataIdx} className={`px-6 py-3 text-sm text-right whitespace-nowrap ${row.bold ? 'font-bold' : 'font-medium'} ${row.color}`}>
-                                            {Number(value || 0).toLocaleString('ru-RU')} ₽
+                                            {Math.round(Number(value) || 0).toLocaleString('ru-RU')} ₽
                                         </td>
                                     );
                                 })}
