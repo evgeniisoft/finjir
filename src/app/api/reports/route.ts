@@ -4,15 +4,7 @@ import { consolidationEngine } from '@/lib/engine/consolidation';
 import { taxEngine } from '@/lib/engine/tax';
 import { loadSystemAccounts } from '@/lib/config/accounts';
 import { dataCache, CACHE_PREFIXES } from '@/lib/cache';
-
-const GAS_URL = process.env.NEXT_PUBLIC_GAS_URL || 'https://script.google.com/macros/s/AKfycbzdcT2cZO5ynSBVMWakir1Y5aAaf5MJaqRq1C8zXDrECdaLbtT_yw3idz7FUNjpMShriw/exec';
-
-async function gasGet(sheet: string): Promise<any[]> {
-  const url = `${GAS_URL}?action=getAll&sheet=${sheet}`;
-  const response = await fetch(url);
-  const data = await response.json();
-  return Array.isArray(data) ? data : [];
-}
+import { getRepository } from '@/lib/dal/repository';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,6 +13,7 @@ export async function GET(request: NextRequest) {
     const companyId = url.searchParams.get('company_id');
     const periodStart = url.searchParams.get('period_start') || '2026-01-01';
     const periodEnd = url.searchParams.get('period_end') || '2026-12-31';
+
     // Проверяем кэш
     const cacheKey = `${CACHE_PREFIXES.REPORTS}_${reportType}_${companyId || 'all'}_${periodStart}_${periodEnd}`;
     const cached = dataCache.get(cacheKey);
@@ -28,15 +21,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(cached);
     }
 
+    // Читаем данные через репозиторий
+    const repo = getRepository();
     const [transactions, accounts, companies, settings] = await Promise.all([
-      gasGet('Transactions'),
-      gasGet('Accounts'),
-      gasGet('Companies'),
-      gasGet('Settings')
+      repo.getAll('Transactions'),
+      repo.getAll('Accounts'),
+      repo.getAll('Companies'),
+      repo.getAll('Settings'),
     ]);
 
     await taxEngine.loadSettings(settings);
-    // Загружаем системные счета
     loadSystemAccounts(settings);
 
     console.log('Transactions:', transactions.length);
@@ -46,16 +40,23 @@ export async function GET(request: NextRequest) {
     if (!companies || companies.length === 0) {
       return NextResponse.json([]);
     }
+
     let targetCompanies = companies;
     if (companyId) {
-      targetCompanies = companies.filter(c => c.id === companyId);
+      targetCompanies = companies.filter((c: any) => c.id === companyId);
     }
 
     switch (reportType) {
       case 'pnl': {
-        const reports = targetCompanies.map(company => {
-          const pnl = calculator.calculatePnL(transactions, accounts, company.id, periodStart, periodEnd, company);
-          const tax = taxEngine.calculateTax(company, transactions, accounts, periodStart, periodEnd);
+        const reports = targetCompanies.map((company: any) => {
+          const pnl = calculator.calculatePnL(
+            transactions, accounts, company.id,
+            periodStart, periodEnd, company
+          );
+          const tax = taxEngine.calculateTax(
+            company, transactions, accounts,
+            periodStart, periodEnd
+          );
           return { company, report: pnl, tax };
         });
         dataCache.set(cacheKey, reports, 300);
@@ -63,31 +64,24 @@ export async function GET(request: NextRequest) {
       }
 
       case 'cashflow': {
-        const reports = targetCompanies.map(company => ({
+        const reports = targetCompanies.map((company: any) => ({
           company,
           report: calculator.calculateCashFlow(
-            transactions,
-            accounts,
-            company.id,
-            periodStart,
-            periodEnd,
-            company
-          )
+            transactions, accounts, company.id,
+            periodStart, periodEnd, company
+          ),
         }));
         dataCache.set(cacheKey, reports, 300);
         return NextResponse.json(reports);
       }
 
       case 'balance': {
-        const reports = targetCompanies.map(company => ({
+        const reports = targetCompanies.map((company: any) => ({
           company,
           report: calculator.calculateBalanceSheet(
-            transactions,
-            accounts,
-            company.id,
-            periodEnd,
-            company
-          )
+            transactions, accounts, company.id,
+            periodEnd, company
+          ),
         }));
         dataCache.set(cacheKey, reports, 300);
         return NextResponse.json(reports);
@@ -96,25 +90,17 @@ export async function GET(request: NextRequest) {
       case 'consolidated': {
         const consolidated = {
           pnl: consolidationEngine.consolidatePnL(
-            targetCompanies,
-            transactions,
-            accounts,
-            periodStart,
-            periodEnd
+            targetCompanies, transactions, accounts,
+            periodStart, periodEnd
           ),
           cashFlow: consolidationEngine.consolidateCashFlow(
-            targetCompanies,
-            transactions,
-            accounts,
-            periodStart,
-            periodEnd
+            targetCompanies, transactions, accounts,
+            periodStart, periodEnd
           ),
           balance: consolidationEngine.consolidateBalanceSheet(
-            targetCompanies,
-            transactions,
-            accounts,
+            targetCompanies, transactions, accounts,
             periodEnd
-          )
+          ),
         };
         return NextResponse.json(consolidated);
       }
@@ -128,10 +114,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ошибка API:', error);
     return NextResponse.json(
-      { error: 'Внутренняя ошибка: ' + (error as Error).message },
+      { error: 'Внутренняя ошибка: ' + error.message },
       { status: 500 }
     );
   }
