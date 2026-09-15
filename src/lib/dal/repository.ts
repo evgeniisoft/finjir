@@ -69,6 +69,30 @@ const DATE_FIELDS: Record<string, string[]> = {
   journal_entries: ["date"],
 };
 
+function normalizeInputDates(data: any, entity: string): any {
+  const modelName = ENTITY_TO_MODEL[entity];
+  if (!modelName) return data;
+  const tableName = MODEL_TO_TABLE[modelName];
+  const fields = DATE_FIELDS[tableName] || [];
+  const result = { ...data };
+  for (const field of fields) {
+    const v = result[field];
+    if (typeof v === "string" && v.length > 0) {
+      // "2026-09-15" → "2026-09-15T00:00:00.000Z"
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        result[field] = new Date(v + "T00:00:00.000Z");
+      } else {
+        // "2026-09-15T10:30:00.000Z" → Date
+        const d = new Date(v);
+        if (!isNaN(d.getTime())) {
+          result[field] = d;
+        }
+      }
+    }
+  }
+  return result;
+}
+
 function normalizeDates(row: any, entity: string): any {
   const modelName = ENTITY_TO_MODEL[entity];
   if (!modelName) return row;
@@ -191,10 +215,11 @@ class PostgresRepository implements Repository {
 
   async create(entity: string, data: any): Promise<any> {
     const model = getModel(entity);
-    const clean = { ...data };
+    let clean = { ...data };
     if (!clean.id || clean.id === "") {
       clean.id = generateId();
     }
+    clean = normalizeInputDates(clean, entity);
     for (const key of Object.keys(clean)) {
       if (clean[key] === "") {
         if (key.endsWith("_at") || key.endsWith("_date")) {
@@ -208,8 +233,9 @@ class PostgresRepository implements Repository {
 
   async update(entity: string, id: string, data: any): Promise<any> {
     const model = getModel(entity);
-    const clean = { ...data };
+    let clean = { ...data };
     delete clean.id;
+    clean = normalizeInputDates(clean, entity);
     for (const key of Object.keys(clean)) {
       if (clean[key] === "") {
         if (key.endsWith("_at") || key.endsWith("_date")) {
@@ -234,10 +260,11 @@ class PostgresRepository implements Repository {
   async batchCreate(entity: string, dataArray: any[]): Promise<any> {
     const model = getModel(entity);
     const cleanArray = dataArray.map((d) => {
-      const clean = { ...d };
-            if (!clean.id || clean.id === "") {
-              clean.id = generateId();
-            }
+      let clean = { ...d };
+      if (!clean.id || clean.id === "") {
+        clean.id = generateId();
+      }
+      clean = normalizeInputDates(clean, entity);
       for (const key of Object.keys(clean)) {
         if (clean[key] === "") {
           if (key.endsWith("_at") || key.endsWith("_date")) {
