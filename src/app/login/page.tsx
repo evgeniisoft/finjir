@@ -2,14 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { hashPassword, saveSession } from '@/lib/auth';
+import { saveSession } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [dbUrl, setDbUrl] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -17,53 +15,38 @@ export default function LoginPage() {
     try {
       setLoading(true);
       setError(null);
-      
-      // Валидация
-      if (!dbUrl) {
-        setError('Введите URL базы данных');
-        return;
-      }
+
       if (!email || !password) {
         setError('Введите email и пароль');
         return;
       }
-      
-      // Хешируем пароль
-      const passwordHash = await hashPassword(password);
-      
-      // Отправляем запрос
+
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbUrl, email, passwordHash })
+        body: JSON.stringify({ email, password })
       });
-      
+
       const result = await response.json();
-      
+
       if (!response.ok) {
         setError(result.error || 'Ошибка входа');
         return;
       }
-      
-      // Сохраняем сессию
-      if (remember) {
-        saveSession({
-          dbType: 'google_sheets',
-          dbUrl,
-          userEmail: result.user.email,
-          userName: result.user.name,
-          userRole: result.user.role,
-          userId: result.user.id,
-          companyId: result.user.company_id || ''
-        });
-      }
-      
-      // Перенаправляем на дашборд
+
+      saveSession({
+        userEmail: result.user.email,
+        userName: result.user.name,
+        userRole: result.user.role,
+        userId: result.user.id,
+        companyId: result.user.company_id || ''
+      });
+
       router.push('/');
-      
+
     } catch (err) {
       console.error('Ошибка:', err);
-      setError('Ошибка подключения к базе данных');
+      setError('Ошибка подключения');
     } finally {
       setLoading(false);
     }
@@ -90,25 +73,13 @@ export default function LoginPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              URL базы данных (GAS API)
-            </label>
-            <input
-              type="text"
-              value={dbUrl}
-              onChange={(e) => setDbUrl(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="https://script.google.com/macros/s/.../exec"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
               Email
             </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="user@company.ru"
             />
@@ -122,21 +93,10 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="********"
             />
-          </div>
-
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              className="mr-2 h-4 w-4"
-            />
-            <label className="text-sm text-gray-600">
-              Запомнить на этом компьютере
-            </label>
           </div>
 
           <button
