@@ -68,6 +68,36 @@ const DATE_FIELDS: Record<string, string[]> = {
   exchange_rates: ["date"],
   journal_entries: ["date"],
 };
+const BOOLEAN_FIELDS: Record<string, string[]> = {
+  companies: [
+    "vat_included",
+    "vat_exempt",
+    "is_group",
+    "is_individual",
+    "has_employees",
+  ],
+  accounts: ["is_cash_flow", "is_cost_of_goods"],
+  transactions: ["is_system"],
+  users: ["is_active"],
+};
+
+function normalizeInputBooleans(data: any, entity: string): any {
+  const modelName = ENTITY_TO_MODEL[entity];
+  if (!modelName) return data;
+  const tableName = MODEL_TO_TABLE[modelName];
+  const fields = BOOLEAN_FIELDS[tableName] || [];
+  const result = { ...data };
+  for (const field of fields) {
+    const v = result[field];
+    if (typeof v === "string") {
+      const s = v.toLowerCase();
+      if (s === "true") result[field] = true;
+      else if (s === "false") result[field] = false;
+      else if (v === "") result[field] = null;
+    }
+  }
+  return result;
+}
 
 function normalizeInputDates(data: any, entity: string): any {
   const modelName = ENTITY_TO_MODEL[entity];
@@ -220,6 +250,7 @@ class PostgresRepository implements Repository {
       clean.id = generateId();
     }
     clean = normalizeInputDates(clean, entity);
+    clean = normalizeInputBooleans(clean, entity);
     for (const key of Object.keys(clean)) {
       if (clean[key] === "") {
         if (key.endsWith("_at") || key.endsWith("_date")) {
@@ -236,6 +267,7 @@ class PostgresRepository implements Repository {
     let clean = { ...data };
     delete clean.id;
     clean = normalizeInputDates(clean, entity);
+    clean = normalizeInputBooleans(clean, entity);
     for (const key of Object.keys(clean)) {
       if (clean[key] === "") {
         if (key.endsWith("_at") || key.endsWith("_date")) {
@@ -265,6 +297,7 @@ class PostgresRepository implements Repository {
         clean.id = generateId();
       }
       clean = normalizeInputDates(clean, entity);
+      clean = normalizeInputBooleans(clean, entity);
       for (const key of Object.keys(clean)) {
         if (clean[key] === "") {
           if (key.endsWith("_at") || key.endsWith("_date")) {
