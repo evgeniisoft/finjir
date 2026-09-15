@@ -23,10 +23,8 @@ class ApiClient {
   private baseUrl = '/api/data';
 
   private getHeaders(): HeadersInit {
-    const session = getSession();
     return {
       'Content-Type': 'application/json',
-      'X-DB-URL': session?.dbUrl || ''
     };
   }
 
