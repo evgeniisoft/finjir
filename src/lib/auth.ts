@@ -33,6 +33,7 @@ export function clearSession(): void {
   localStorage.removeItem(SESSION_KEY);
 }
 
+
 export function isAuthenticated(): boolean {
   return getSession() !== null;
 }
