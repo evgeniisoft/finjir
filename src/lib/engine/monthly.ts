@@ -261,8 +261,8 @@ export class MonthlyEngine {
         let totalLiabilities = this.calculateTotalLiabilities(details, accounts);
 
         // Добавляем задолженность по налогам как обязательство (только если были операции)
-        if (taxCalc && hasPeriodActivity) {
-          const taxLiability = taxCalc.income_tax_amount + taxCalc.insurance_amount + taxCalc.ndfl_amount + taxCalc.vat_to_pay;
+        if (annualTaxCalc) {
+          const taxLiability = annualTaxCalc.income_tax_amount + annualTaxCalc.insurance_amount + annualTaxCalc.ndfl_amount + annualTaxCalc.vat_to_pay;
           totalLiabilities += taxLiability;
           details['acc-tax-liability'] = taxLiability;
         }
