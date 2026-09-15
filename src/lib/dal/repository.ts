@@ -106,18 +106,56 @@ class SheetsRepository implements Repository {
 }
 
 // ============================================
+// Нормализация дат: Prisma Date → ISO-строка (как было в GAS)
+// ============================================
+const MODEL_TO_TABLE: Record<string, string> = {
+  setting: 'settings',
+  company: 'companies',
+  account: 'accounts',
+  counterparty: 'counterparties',
+  transaction: 'transactions',
+  budget: 'budgets',
+  user: 'users',
+  auditLogEntry: 'audit_log',
+  exchangeRate: 'exchange_rates',
+  journalEntry: 'journal_entries',
+};
+
+const DATE_FIELDS: Record<string, string[]> = {
+  transactions: ['date', 'accrual_date'],
+  companies: ['deleted_at'],
+  accounts: ['deleted_at'],
+  counterparties: ['deleted_at'],
+  users: ['last_login', 'deleted_at'],
+  audit_log: ['timestamp'],
+  exchange_rates: ['date'],
+  journal_entries: ['date'],
+};
+
+function normalizeDates(row: any, entity: string): any {
+  const modelName = ENTITY_TO_MODEL[entity];
+  if (!modelName) return row;
+  const tableName = MODEL_TO_TABLE[modelName];
+  const fields = DATE_FIELDS[tableName] || [];
+  const result = { ...row };
+  for (const field of fields) {
+    const v = result[field];
+    if (v instanceof Date) {
+      result[field] = v.toISOString();
+    }
+  }
+  return result;
+}
+
+// ============================================
 // PostgresRepository — новая реализация
 // ============================================
 class PostgresRepository implements Repository {
 
   async getAll(entity: string): Promise<any[]> {
     const model = getModel(entity);
-    return model.findMany();
-  }
-
-  async getById(entity: string, id: string): Promise<any> {
-    const model = getModel(entity);
-    return model.findUnique({ where: { id } });
+    const rows = await model.findMany();
+    return rows.map((row: any) => normalizeDates(row, entity));
   }
 
   async create(entity: string, data: any): Promise<any> {
