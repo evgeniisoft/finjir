@@ -17,6 +17,8 @@ export default function InitialBalancesPage() {
         date: '2026-01-01'
     });
 
+    const [editingId, setEditingId] = useState<string | null>(null);
+
     useEffect(() => {
         loadData();
     }, []);
@@ -33,7 +35,6 @@ export default function InitialBalancesPage() {
             setAccounts(accountsData);
             setCompanies(companiesData);
 
-            // Находим начальные остатки (операции с credit_account_id = acc-equity-001)
             const initialBalances = transactionsData.filter(t =>
                 t.credit_account_id === 'acc-equity-001' ||
                 t.description?.includes('Начальный остаток')
@@ -45,6 +46,22 @@ export default function InitialBalancesPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleEdit = (balance: any) => {
+        setEditingId(balance.id);
+        setFormData({
+            company_id: balance.company_id || '',
+            account_id: balance.debit_account_id || '',
+            amount: String(balance.amount || ''),
+            date: String(balance.date || '').split('T')[0],
+        });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleCancelEdit = () => {
+        setEditingId(null);
+        setFormData({ company_id: '', account_id: '', amount: '', date: '2026-01-01' });
     };
 
     const handleAddBalance = async () => {
@@ -93,6 +110,47 @@ export default function InitialBalancesPage() {
         }
     };
 
+    const handleUpdateBalance = async () => {
+        if (!editingId) return;
+        if (!formData.company_id || !formData.account_id || !formData.amount) {
+            alert('Заполните все поля');
+            return;
+        }
+
+        try {
+            const amount = parseFloat(formData.amount);
+
+            await api.update('Transactions', editingId, {
+                date: formData.date,
+                company_id: formData.company_id,
+                amount: amount,
+                amount_rub: amount,
+                debit_account_id: formData.account_id,
+                accrual_date: formData.date,
+                destination_account_id: formData.account_id,
+            });
+
+            alert('Остаток обновлён');
+            setEditingId(null);
+            setFormData({ company_id: '', account_id: '', amount: '', date: '2026-01-01' });
+            loadData();
+        } catch (error) {
+            console.error('Ошибка:', error);
+            alert('Ошибка при обновлении остатка');
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Удалить начальный остаток?')) return;
+        try {
+            await api.delete('Transactions', id);
+            loadData();
+        } catch (error) {
+            console.error('Ошибка:', error);
+            alert('Ошибка при удалении');
+        }
+    };
+
     return (
         <div>
             <div className="mb-8">
@@ -102,9 +160,11 @@ export default function InitialBalancesPage() {
                 </p>
             </div>
 
-            {/* Форма добавления */}
+            {/* Форма добавления/редактирования */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Добавить остаток</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    {editingId ? 'Редактировать остаток' : 'Добавить остаток'}
+                </h3>
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -160,12 +220,22 @@ export default function InitialBalancesPage() {
                     </div>
                 </div>
 
-                <button
-                    onClick={handleAddBalance}
-                    className="mt-4 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
-                >
-                    Добавить остаток
-                </button>
+                <div className="mt-4 flex gap-3">
+                    <button
+                        onClick={editingId ? handleUpdateBalance : handleAddBalance}
+                        className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+                    >
+                        {editingId ? 'Сохранить изменения' : 'Добавить остаток'}
+                    </button>
+                    {editingId && (
+                        <button
+                            onClick={handleCancelEdit}
+                            className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200"
+                        >
+                            Отмена
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Список остатков */}
@@ -177,12 +247,13 @@ export default function InitialBalancesPage() {
                             <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Компания</th>
                             <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Счёт</th>
                             <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Сумма</th>
+                            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Действия</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                         {balances.length === 0 ? (
                             <tr>
-                                <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+                                <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                                     Нет начальных остатков
                                 </td>
                             </tr>
@@ -190,13 +261,28 @@ export default function InitialBalancesPage() {
                             balances.map(b => {
                                 const company = companies.find(c => c.id === b.company_id);
                                 const account = accounts.find(a => a.id === b.debit_account_id);
+                                const displayDate = String(b.date || '').split('T')[0];
                                 return (
                                     <tr key={b.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 text-sm text-gray-900">{b.date}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-900">{displayDate}</td>
                                         <td className="px-6 py-4 text-sm text-gray-600">{company?.name || b.company_id}</td>
                                         <td className="px-6 py-4 text-sm text-gray-600">{account?.name || b.debit_account_id}</td>
                                         <td className="px-6 py-4 text-sm text-right font-medium text-gray-900">
                                             {parseFloat(b.amount)?.toLocaleString('ru-RU')} ₽
+                                        </td>
+                                        <td className="px-6 py-4 text-right space-x-3">
+                                            <button
+                                                onClick={() => handleEdit(b)}
+                                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                            >
+                                                Изменить
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(b.id)}
+                                                className="text-red-600 hover:text-red-800 text-sm font-medium"
+                                            >
+                                                Удалить
+                                            </button>
                                         </td>
                                     </tr>
                                 );
