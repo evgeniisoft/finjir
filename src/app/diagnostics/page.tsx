@@ -163,17 +163,13 @@ export default function DiagnosticsPage() {
   };
 
   const categoryLabels: { [key: string]: string } = {
+    'data_integrity': 'Целостность данных',
+    'settings': 'Настройки',
+    'calculations': 'Формулы',
+    'consistency': 'Согласованность отчётов',
+    'business_rules': 'Бизнес-правила',
     'infrastructure': 'Инфраструктура',
-    'data_quality': 'Качество данных',
-    'dashboard': 'Дашборд',
-    'financial': 'Финансовые расчёты',
-    'taxes': 'Налоги',
-    'planning': 'Планирование',
-    'consolidation': 'Консолидация',
-    'risks': 'Риски',
     'processes': 'Процессы',
-    'consistency': 'Согласованность',
-    'reports': 'Согласованность отчётов'
   };
 
   const healthScore = (() => {
@@ -219,10 +215,22 @@ export default function DiagnosticsPage() {
     return groups;
   }, {});
 
+  const categoryOrder = [
+    'data_integrity',
+    'settings',
+    'calculations',
+    'consistency',
+    'business_rules',
+    'infrastructure',
+    'processes',
+  ];
+
   const sortedCategories = Object.keys(groupedByCategory).sort((a, b) => {
-    const aCritical = groupedByCategory[a].filter((c: any) => c.severity === 'critical').length;
-    const bCritical = groupedByCategory[b].filter((c: any) => c.severity === 'critical').length;
-    return bCritical - aCritical;
+    const aIdx = categoryOrder.indexOf(a);
+    const bIdx = categoryOrder.indexOf(b);
+    if (aIdx === -1) return 1;
+    if (bIdx === -1) return -1;
+    return aIdx - bIdx;
   });
 
   return (
@@ -376,7 +384,7 @@ export default function DiagnosticsPage() {
       {/* Детальная проверка по модулям */}
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-3">
-          Детальная проверка по модулям
+          Детальная проверка по уровням
         </h3>
         <div className="space-y-2">
           {sortedCategories.map(category => {
