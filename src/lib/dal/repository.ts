@@ -6,7 +6,7 @@
  * Сейчас: PostgreSQL (Neon) / Google Sheets через GAS
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from "@/lib/prisma";
 
 export interface Repository {
   getAll(entity: string): Promise<any[]>;
@@ -22,29 +22,29 @@ export interface Repository {
 // Маппинг entity (имя листа GAS) → модель Prisma
 // ============================================
 const ENTITY_TO_MODEL: Record<string, string> = {
-  Settings: 'setting',
-  Companies: 'company',
-  Accounts: 'account',
-  Counterparties: 'counterparty',
-  Transactions: 'transaction',
-  Budgets: 'budget',
-  Users: 'user',
-  AuditLog: 'auditLogEntry',
-  ExchangeRates: 'exchangeRate',
-  JournalEntries: 'journalEntry',
+  Settings: "setting",
+  Companies: "company",
+  Accounts: "account",
+  Counterparties: "counterparty",
+  Transactions: "transaction",
+  Budgets: "budget",
+  Users: "user",
+  AuditLog: "auditLogEntry",
+  ExchangeRates: "exchangeRate",
+  JournalEntries: "journalEntry",
 };
 
 const MODEL_TO_TABLE: Record<string, string> = {
-  setting: 'settings',
-  company: 'companies',
-  account: 'accounts',
-  counterparty: 'counterparties',
-  transaction: 'transactions',
-  budget: 'budgets',
-  user: 'users',
-  auditLogEntry: 'audit_log',
-  exchangeRate: 'exchange_rates',
-  journalEntry: 'journal_entries',
+  setting: "settings",
+  company: "companies",
+  account: "accounts",
+  counterparty: "counterparties",
+  transaction: "transactions",
+  budget: "budgets",
+  user: "users",
+  auditLogEntry: "audit_log",
+  exchangeRate: "exchange_rates",
+  journalEntry: "journal_entries",
 };
 
 function getModel(entity: string): any {
@@ -59,14 +59,14 @@ function getModel(entity: string): any {
 // Нормализация дат: Prisma Date → ISO-строка (как было в GAS)
 // ============================================
 const DATE_FIELDS: Record<string, string[]> = {
-  transactions: ['date', 'accrual_date'],
-  companies: ['deleted_at'],
-  accounts: ['deleted_at'],
-  counterparties: ['deleted_at'],
-  users: ['last_login', 'deleted_at'],
-  audit_log: ['timestamp'],
-  exchange_rates: ['date'],
-  journal_entries: ['date'],
+  transactions: ["date", "accrual_date"],
+  companies: ["deleted_at"],
+  accounts: ["deleted_at"],
+  counterparties: ["deleted_at"],
+  users: ["last_login", "deleted_at"],
+  audit_log: ["timestamp"],
+  exchange_rates: ["date"],
+  journal_entries: ["date"],
 };
 
 function normalizeDates(row: any, entity: string): any {
@@ -91,9 +91,10 @@ class SheetsRepository implements Repository {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = process.env.GAS_URL ||
+    this.baseUrl =
+      process.env.GAS_URL ||
       process.env.NEXT_PUBLIC_GAS_URL ||
-      'https://script.google.com/macros/s/AKfycbzdcT2cZO5ynSBVMWakir1Y5aAaf5MJaqRq1C8zXDrECdaLbtT_yw3idz7FUNjpMShriw/exec';
+      "https://script.google.com/macros/s/AKfycbzdcT2cZO5ynSBVMWakir1Y5aAaf5MJaqRq1C8zXDrECdaLbtT_yw3idz7FUNjpMShriw/exec";
   }
 
   async getAll(entity: string): Promise<any[]> {
@@ -102,7 +103,7 @@ class SheetsRepository implements Repository {
     return rows.map((row: any) => {
       const normalized = normalizeDates(row, entity);
       // Скрываем пароль при чтении Users
-      if (entity === 'Users' && normalized.password !== undefined) {
+      if (entity === "Users" && normalized.password !== undefined) {
         delete normalized.password;
       }
       return normalized;
@@ -111,15 +112,15 @@ class SheetsRepository implements Repository {
 
   async getById(entity: string, id: string): Promise<any> {
     const url = `${this.baseUrl}?action=getById&sheet=${entity}&id=${encodeURIComponent(id)}`;
-    const response = await fetch(url, { cache: 'no-store' });
+    const response = await fetch(url, { cache: "no-store" });
     return response.json();
   }
 
   async create(entity: string, data: any): Promise<any> {
     const response = await fetch(this.baseUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'create', sheet: entity, data })
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "create", sheet: entity, data }),
     });
     return response.json();
   }
@@ -139,9 +140,13 @@ class SheetsRepository implements Repository {
 
   async batchCreate(entity: string, dataArray: any[]): Promise<any> {
     const response = await fetch(this.baseUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'batchCreate', sheet: entity, data: dataArray })
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "batchCreate",
+        sheet: entity,
+        data: dataArray,
+      }),
     });
     return response.json();
   }
@@ -153,18 +158,25 @@ class SheetsRepository implements Repository {
   }
 }
 
+function generateId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // ============================================
 // PostgresRepository — реализация через Prisma
 // ============================================
 class PostgresRepository implements Repository {
-
   async getAll(entity: string): Promise<any[]> {
     const model = getModel(entity);
     const rows = await model.findMany();
     return rows.map((row: any) => {
       const normalized = normalizeDates(row, entity);
       // Скрываем пароль при чтении Users
-      if (entity === 'Users' && normalized.password !== undefined) {
+      if (entity === "Users" && normalized.password !== undefined) {
         delete normalized.password;
       }
       return normalized;
@@ -180,10 +192,12 @@ class PostgresRepository implements Repository {
   async create(entity: string, data: any): Promise<any> {
     const model = getModel(entity);
     const clean = { ...data };
-    if (!clean.id || clean.id === '') delete clean.id;
+    if (!clean.id || clean.id === "") {
+      clean.id = generateId();
+    }
     for (const key of Object.keys(clean)) {
-      if (clean[key] === '') {
-        if (key.endsWith('_at') || key.endsWith('_date')) {
+      if (clean[key] === "") {
+        if (key.endsWith("_at") || key.endsWith("_date")) {
           clean[key] = null;
         }
       }
@@ -197,8 +211,8 @@ class PostgresRepository implements Repository {
     const clean = { ...data };
     delete clean.id;
     for (const key of Object.keys(clean)) {
-      if (clean[key] === '') {
-        if (key.endsWith('_at') || key.endsWith('_date')) {
+      if (clean[key] === "") {
+        if (key.endsWith("_at") || key.endsWith("_date")) {
           clean[key] = null;
         }
       }
@@ -221,17 +235,22 @@ class PostgresRepository implements Repository {
     const model = getModel(entity);
     const cleanArray = dataArray.map((d) => {
       const clean = { ...d };
-      if (!clean.id || clean.id === '') delete clean.id;
+            if (!clean.id || clean.id === "") {
+              clean.id = generateId();
+            }
       for (const key of Object.keys(clean)) {
-        if (clean[key] === '') {
-          if (key.endsWith('_at') || key.endsWith('_date')) {
+        if (clean[key] === "") {
+          if (key.endsWith("_at") || key.endsWith("_date")) {
             clean[key] = null;
           }
         }
       }
       return clean;
     });
-    const result = await model.createMany({ data: cleanArray, skipDuplicates: true });
+    const result = await model.createMany({
+      data: cleanArray,
+      skipDuplicates: true,
+    });
     return { success: true, count: result.count };
   }
 
@@ -253,8 +272,8 @@ let repositoryInstance: Repository | null = null;
 
 export function getRepository(): Repository {
   if (!repositoryInstance) {
-    const dbType = process.env.DB_TYPE || 'postgresql';
-    if (dbType === 'sheets') {
+    const dbType = process.env.DB_TYPE || "postgresql";
+    if (dbType === "sheets") {
       repositoryInstance = new SheetsRepository();
     } else {
       repositoryInstance = new PostgresRepository();
