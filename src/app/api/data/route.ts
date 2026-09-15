@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getRepository } from '@/lib/dal/repository';
+import { dataCache, CACHE_PREFIXES } from '@/lib/cache';
 
 export async function GET(request: NextRequest) {
   try {
@@ -6,32 +8,43 @@ export async function GET(request: NextRequest) {
     const action = url.searchParams.get('action');
     const sheet = url.searchParams.get('sheet');
     const id = url.searchParams.get('id');
-    const data = url.searchParams.get('data');
-    
-    // Получаем URL из заголовка
-    const dbUrl = request.headers.get('X-DB-URL') || '';
-    
-    if (!dbUrl) {
-      return NextResponse.json(
-        { error: 'URL базы данных не указан. Войдите заново.' },
-        { status: 400 }
-      );
+
+    if (!sheet) {
+      return NextResponse.json({ error: 'Не указан sheet' }, { status: 400 });
     }
-    
-    let gasUrl = `${dbUrl}?action=${action}&sheet=${sheet}`;
-    if (id) gasUrl += `&id=${encodeURIComponent(id)}`;
-    if (data) gasUrl += `&data=${data}`;
-    
-    console.log('GET к GAS:', gasUrl);
-    
-    const response = await fetch(gasUrl);
-    const result = await response.json();
-    
-    return NextResponse.json(result);
-    
-  } catch (error) {
+
+    const repo = getRepository();
+
+    if (action === 'getAll') {
+      const data = await repo.getAll(sheet);
+      return NextResponse.json(data);
+    }
+
+    if (action === 'getById') {
+      if (!id) return NextResponse.json({ error: 'Не указан id' }, { status: 400 });
+      const item = await repo.getById(sheet, id);
+      return NextResponse.json(item);
+    }
+
+    if (action === 'delete') {
+      if (!id) return NextResponse.json({ error: 'Не указан id' }, { status: 400 });
+      const success = await repo.delete(sheet, id);
+      // Инвалидация кэша
+      dataCache.invalidate(CACHE_PREFIXES.DATA);
+      dataCache.invalidate(CACHE_PREFIXES.REPORTS);
+      dataCache.invalidate(CACHE_PREFIXES.BALANCE);
+      dataCache.invalidate(CACHE_PREFIXES.USN_LIMITS);
+      return NextResponse.json({ success });
+    }
+
+    return NextResponse.json({ error: 'Неизвестный action: ' + action }, { status: 400 });
+
+  } catch (error: any) {
     console.error('Ошибка API GET:', error);
-    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка: ' + error.message },
+      { status: 500 }
+    );
   }
 }
 
@@ -42,29 +55,58 @@ export async function POST(request: NextRequest) {
     const sheet = body.sheet;
     const data = body.data;
     const id = body.id;
-    
-    const dbUrl = request.headers.get('X-DB-URL') || '';
-    
-    if (!dbUrl) {
-      return NextResponse.json(
-        { error: 'URL базы данных не указан. Войдите заново.' },
-        { status: 400 }
-      );
+
+    if (!sheet) {
+      return NextResponse.json({ error: 'Не указан sheet' }, { status: 400 });
     }
-    
-    let gasUrl = `${dbUrl}?action=${action}&sheet=${sheet}`;
-    if (id) gasUrl += `&id=${encodeURIComponent(id)}`;
-    if (data) gasUrl += `&data=${encodeURIComponent(JSON.stringify(data))}`;
-    
-    console.log('POST к GAS:', gasUrl);
-    
-    const response = await fetch(gasUrl);
-    const result = await response.json();
-    
-    return NextResponse.json(result);
-    
-  } catch (error) {
+
+    const repo = getRepository();
+
+    if (action === 'create') {
+      const result = await repo.create(sheet, data);
+      // Инвалидация кэша
+      dataCache.invalidate(CACHE_PREFIXES.DATA);
+      dataCache.invalidate(CACHE_PREFIXES.REPORTS);
+      dataCache.invalidate(CACHE_PREFIXES.BALANCE);
+      dataCache.invalidate(CACHE_PREFIXES.USN_LIMITS);
+      return NextResponse.json(result);
+    }
+
+    if (action === 'update') {
+      if (!id) return NextResponse.json({ error: 'Не указан id' }, { status: 400 });
+      const result = await repo.update(sheet, id, data);
+      dataCache.invalidate(CACHE_PREFIXES.DATA);
+      dataCache.invalidate(CACHE_PREFIXES.REPORTS);
+      dataCache.invalidate(CACHE_PREFIXES.BALANCE);
+      dataCache.invalidate(CACHE_PREFIXES.USN_LIMITS);
+      return NextResponse.json(result);
+    }
+
+    if (action === 'batchCreate') {
+      const result = await repo.batchCreate(sheet, data);
+      dataCache.invalidate(CACHE_PREFIXES.DATA);
+      dataCache.invalidate(CACHE_PREFIXES.REPORTS);
+      dataCache.invalidate(CACHE_PREFIXES.BALANCE);
+      dataCache.invalidate(CACHE_PREFIXES.USN_LIMITS);
+      return NextResponse.json(result);
+    }
+
+    if (action === 'deleteByHash') {
+      const hash = body.hash;
+      if (!hash) return NextResponse.json({ error: 'Не указан hash' }, { status: 400 });
+      const result = await repo.deleteByHash(sheet, hash);
+      dataCache.invalidate(CACHE_PREFIXES.DATA);
+      dataCache.invalidate(CACHE_PREFIXES.REPORTS);
+      return NextResponse.json(result);
+    }
+
+    return NextResponse.json({ error: 'Неизвестный action: ' + action }, { status: 400 });
+
+  } catch (error: any) {
     console.error('Ошибка API POST:', error);
-    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка: ' + error.message },
+      { status: 500 }
+    );
   }
 }
