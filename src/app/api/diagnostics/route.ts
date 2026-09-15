@@ -3,16 +3,7 @@ import { diagnosticsEngine } from '@/lib/diagnostics/engine';
 import { DiagnosticContext } from '@/lib/diagnostics/types';
 import { loadSystemAccounts, getSystemAccounts } from '@/lib/config/accounts';
 import { taxEngine } from '@/lib/engine/tax';
-
-const GAS_URL = process.env.NEXT_PUBLIC_GAS_URL
-  || 'https://script.google.com/macros/s/AKfycbzdcT2cZO5ynSBVMWakir1Y5aAaf5MJaqRq1C8zXDrECdaLbtT_yw3idz7FUNjpMShriw/exec';
-
-async function gasGet(sheet: string): Promise<any[]> {
-  const url = `${GAS_URL}?action=getAll&sheet=${sheet}`;
-  const response = await fetch(url, { cache: 'no-store' });
-  const data = await response.json();
-  return Array.isArray(data) ? data : [];
-}
+import { getRepository } from '@/lib/dal/repository';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -21,41 +12,35 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const year = url.searchParams.get('year') || String(new Date().getFullYear());
 
-    // Период диагностики = весь год
     const periodStart = `${year}-01-01`;
     const periodEnd = `${year}-12-31`;
     const today = new Date().toISOString().split('T')[0];
 
-    // Опции
     const checkConsistency = url.searchParams.get('consistency') !== 'false';
     const checkInfrastructure = url.searchParams.get('infrastructure') !== 'false';
     const checkBusinessRules = url.searchParams.get('business') !== 'false';
 
-    // Загрузка данных
+    // Загрузка данных через репозиторий
     const loadStart = Date.now();
+    const repo = getRepository();
     const [transactions, accounts, companies, counterparties, budgets, settings] = await Promise.all([
-      gasGet('Transactions'),
-      gasGet('Accounts'),
-      gasGet('Companies'),
-      gasGet('Counterparties'),
-      gasGet('Budgets'),
-      gasGet('Settings'),
+      repo.getAll('Transactions'),
+      repo.getAll('Accounts'),
+      repo.getAll('Companies'),
+      repo.getAll('Counterparties'),
+      repo.getAll('Budgets'),
+      repo.getAll('Settings'),
     ]);
     const gasLoadTime = Date.now() - loadStart;
 
-    // Загрузка системных счетов
     loadSystemAccounts(settings);
-
-    // Загрузка настроек в taxEngine (критично!)
     await taxEngine.loadSettings(settings);
 
-    // Преобразование settings в объект
     const settingsMap: any = {};
     for (const s of settings) {
       settingsMap[s.key] = s.value;
     }
 
-    // Контекст диагностики
     const context: DiagnosticContext = {
       transactions,
       accounts,
@@ -76,17 +61,16 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    // Запуск движка
     const result = await diagnosticsEngine.run(context);
 
     return NextResponse.json(result);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ошибка диагностики:', error);
     return NextResponse.json(
       {
-        error: 'Внутренняя ошибка: ' + (error as Error).message,
-        stack: (error as Error).stack,
+        error: 'Внутренняя ошибка: ' + error.message,
+        stack: error.stack,
       },
       { status: 500 }
     );
