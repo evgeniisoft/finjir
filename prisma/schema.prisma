@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model Setting {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  value       String
+  description String?
+  category    String?
+  is_deleted  String?   @default("")
+  deleted_at  DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@map("settings")
+}
+
+model Company {
+  id              String    @id
+  name            String
+  external_id     String?   @default("")
+  inn             String?   @default("")
+  kpp             String?   @default("")
+  source          String    @default("manual")
+  tax_system      String
+  currency        String    @default("RUB")
+  vat_included    Boolean?
+  vat_rate        Float?
+  vat_exempt      Boolean?
+  is_group        Boolean?
+  parent_id       String?   @default("")
+  is_deleted      String?   @default("")
+  deleted_at      DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  has_employees   Boolean?
+  employee_count  Int?
+  monthly_payroll Float?
+  industry_type   String    @default("general")
+  is_individual   Boolean?
+  tenant_id       String?   @default("tenant-1")
+
+  @@map("companies")
+}
+
+model Account {
+  id               String    @id
+  code             String
+  name             String
+  type             String
+  is_cash_flow     Boolean?
+  is_cost_of_goods Boolean?
+  activity_type    String?
+  parent_id        String?   @default("")
+  group_name       String?
+  source_code      String?
+  is_deleted       String?   @default("")
+  deleted_at       DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  @@map("accounts")
+}
+
+model Counterparty {
+  id         String    @id
+  name       String
+  inn        String?   @default("")
+  type       String?
+  company_id String?
+  is_deleted String?   @default("")
+  deleted_at DateTime?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+
+  @@map("counterparties")
+}
+
+model Transaction {
+  id                     String    @id
+  external_id            String?   @default("")
+  transaction_group_id   String?   @default("")
+  date                   DateTime
+  company_id             String
+  description            String?   @default("")
+  amount                 Float
+  currency               String    @default("RUB")
+  amount_rub             Float
+  counterparty_id        String?   @default("")
+  contract_id            String?   @default("")
+  debit_account_id       String
+  credit_account_id      String
+  source                 String    @default("manual")
+  is_system              Boolean?
+  is_deleted             String?   @default("")
+  deleted_at             DateTime?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+  tenant_id              String?   @default("tenant-1")
+  record_type            String    @default("fact")
+  accrual_date           DateTime?
+  import_hash            String?   @unique
+  source_account_id      String?   @default("")
+  destination_account_id String?   @default("")
+  type                   String
+  vat_rate               Float?
+  vat_amount             Float?
+  vat_direction          String?
+  amount_without_vat     Float?
+
+  @@map("transactions")
+}
+
+model Budget {
+  id                 String    @id @default(uuid())
+  tenant_id          String?   @default("tenant-1")
+  company_id         String
+  category_id        String?
+  account_id         String?
+  period             String
+  planned_amount     Float     @default(0)
+  actual_amount      Float?
+  record_type        String    @default("pnl")
+  scenario           String    @default("base")
+  status             String    @default("draft")
+  payment_delay_days Int?
+  is_deleted         String?   @default("")
+  deleted_at         DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  @@map("budgets")
+}
+
+model User {
+  id         String    @id
+  email      String    @unique
+  password   String
+  name       String?
+  role       String    @default("viewer")
+  company_id String?   @default("")
+  is_active  Boolean?
+  created_at DateTime  @default(now())
+  last_login DateTime?
+  is_deleted String?   @default("")
+  deleted_at DateTime?
+
+  @@map("users")
+}
+
+model AuditLogEntry {
+  id        String    @id @default(uuid())
+  user_id   String?
+  action    String
+  entity    String?   @default("")
+  entity_id String?   @default("")
+  changes   String?   @default("")
+  timestamp DateTime  @default(now())
+
+  @@map("audit_log")
+}
+
+model ExchangeRate {
+  id       String   @id @default(uuid())
+  date     DateTime
+  currency String
+  rate     Float
+
+  @@unique([date, currency])
+  @@map("exchange_rates")
+}
+
+model JournalEntry {
+  id            String   @id @default(uuid())
+  transaction_id String
+  date          DateTime
+  company_id    String
+  account_id    String
+  debit         Float    @default(0)
+  credit        Float    @default(0)
+  currency      String   @default("RUB")
+  amount_rub    Float    @default(0)
+
+  @@map("journal_entries")
+}
