@@ -1,25 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
-import { calculator } from "@/lib/engine/calculator";
-import { taxEngine } from "@/lib/engine/tax";
-import { loadSystemAccounts } from "@/lib/config/accounts";
+import { NextRequest, NextResponse } from 'next/server';
+import { calculator } from '@/lib/engine/calculator';
+import { taxEngine } from '@/lib/engine/tax';
+import { loadSystemAccounts } from '@/lib/config/accounts';
+import { getRepository } from '@/lib/dal/repository';
 
-const GAS_URL =
-  process.env.NEXT_PUBLIC_GAS_URL ||
-  "https://script.google.com/macros/s/AKfycbzdcT2cZO5ynSBVMWakir1Y5aAaf5MJaqRq1C8zXDrECdaLbtT_yw3idz7FUNjpMShriw/exec";
-
-async function gasGet(
+async function repoGet(
+  repo: any,
   sheet: string,
 ): Promise<{ data: any[]; elapsed_ms: number }> {
   const startTime = Date.now();
-  const url = `${GAS_URL}?action=getAll&sheet=${sheet}`;
-  const response = await fetch(url);
-  const data = await response.json();
+  const data = await repo.getAll(sheet);
   const elapsed = Date.now() - startTime;
   return { data: Array.isArray(data) ? data : [], elapsed_ms: elapsed };
 }
 
 export async function GET(request: NextRequest) {
   try {
+    const repo = getRepository();
     const results: any[] = [];
 
     // ============ 1. Замеряем загрузку листов ============
@@ -33,24 +30,24 @@ export async function GET(request: NextRequest) {
     ];
 
     for (const sheet of sheets) {
-      const { data, elapsed_ms } = await gasGet(sheet);
+      const { data, elapsed_ms } = await repoGet(repo, sheet);
       results.push({
-        type: "gas_sheet",
+        type: "repository",
         name: sheet,
         rows: data.length,
         time_ms: elapsed_ms,
         status:
-          elapsed_ms > 3000 ? "critical" : elapsed_ms > 1500 ? "warning" : "ok",
+          elapsed_ms > 1000 ? "critical" : elapsed_ms > 500 ? "warning" : "ok",
       });
     }
 
     // ============ 2. Замеряем загрузку всех листов параллельно ============
     const parallelStart = Date.now();
     const [transactions, accounts, companies, settings] = await Promise.all([
-      gasGet("Transactions"),
-      gasGet("Accounts"),
-      gasGet("Companies"),
-      gasGet("Settings"),
+      repoGet(repo, "Transactions"),
+      repoGet(repo, "Accounts"),
+      repoGet(repo, "Companies"),
+      repoGet(repo, "Settings"),
     ]);
     const parallelElapsed = Date.now() - parallelStart;
 
@@ -59,9 +56,9 @@ export async function GET(request: NextRequest) {
       name: "Все листы параллельно",
       time_ms: parallelElapsed,
       status:
-        parallelElapsed > 5000
+        parallelElapsed > 2000
           ? "critical"
-          : parallelElapsed > 2500
+          : parallelElapsed > 1000
             ? "warning"
             : "ok",
     });
@@ -91,7 +88,7 @@ export async function GET(request: NextRequest) {
       type: "report",
       name: "ОПиУ (P&L)",
       time_ms: pnlElapsed,
-      status: pnlElapsed > 2000 ? "warning" : "ok",
+      status: pnlElapsed > 1000 ? "warning" : "ok",
     });
 
     // Cash Flow
@@ -111,7 +108,7 @@ export async function GET(request: NextRequest) {
       type: "report",
       name: "ДДС (Cash Flow)",
       time_ms: cfElapsed,
-      status: cfElapsed > 2000 ? "warning" : "ok",
+      status: cfElapsed > 1000 ? "warning" : "ok",
     });
 
     // Balance
@@ -130,16 +127,14 @@ export async function GET(request: NextRequest) {
       type: "report",
       name: "Баланс",
       time_ms: balElapsed,
-      status: balElapsed > 2000 ? "warning" : "ok",
+      status: balElapsed > 1000 ? "warning" : "ok",
     });
 
     // ============ Итоги ============
-    // Сумма всех индивидуальных замеров (для диагностики)
     const totalTime = results
       .filter((r) => r.type !== "parallel_load")
       .reduce((sum, r) => sum + r.time_ms, 0);
 
-    // Реальное время = время параллельной загрузки (как пользователь ощущает)
     const parallelTime =
       results.find((r) => r.type === "parallel_load")?.time_ms || totalTime;
     const slowest = [...results].sort((a, b) => b.time_ms - a.time_ms)[0];
@@ -147,9 +142,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       timestamp: new Date().toISOString(),
       data_source: {
-        type: "gas",
-        host: GAS_URL,
-        expected_latency_ms: 2000,
+        type: "postgresql",
+        host: "Neon",
+        expected_latency_ms: 200,
       },
       results,
       summary: {
@@ -171,10 +166,10 @@ export async function GET(request: NextRequest) {
           };
           const slowestName = nameMap[slowest.name] || slowest.name;
           return [
-            slowest.time_ms > 3000
+            slowest.time_ms > 1000
               ? `${slowestName} — узкое место (${slowest.time_ms}мс). Рассмотрите оптимизацию.`
               : "Все этапы в пределах нормы.",
-            "Переход на PostgreSQL ускорит систему в 10-20 раз.",
+            "Данные читаются из PostgreSQL (Neon).",
           ];
         })(),
       },
@@ -192,7 +187,7 @@ export async function GET(request: NextRequest) {
         slowest: { name: "—", time_ms: 0 },
         recommendations: ["Тест упал. Смотрите error и stack выше."],
       },
-      data_source: { type: "gas", host: GAS_URL, expected_latency_ms: 2000 },
+      data_source: { type: "postgresql", host: "Neon", expected_latency_ms: 200 },
     });
   }
 }
