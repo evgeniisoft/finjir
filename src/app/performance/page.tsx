@@ -33,7 +33,18 @@ export default function PerformancePage() {
     const saved = localStorage.getItem("performance_history");
     if (saved) {
       try {
-        setHistory(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        // Фильтруем записи без summary (старый формат до правок)
+        const valid = Array.isArray(parsed)
+          ? parsed.filter(
+              (h: any) => h && h.summary && h.summary.total_time_ms != null,
+            )
+          : [];
+        setHistory(valid);
+        // Заодно перезапишем localStorage очищенной версией
+        if (valid.length !== parsed.length) {
+          localStorage.setItem("performance_history", JSON.stringify(valid));
+        }
       } catch {}
     }
   }, []);
@@ -202,6 +213,7 @@ export default function PerformancePage() {
             {history
               .slice(-5)
               .reverse()
+              .filter((h: any) => h && h.summary)
               .map((h: any, idx: number) => (
                 <div
                   key={idx}
