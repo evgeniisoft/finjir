@@ -181,9 +181,18 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Ошибка performance теста:", error);
-    return NextResponse.json(
-      { error: "Внутренняя ошибка: " + (error as Error).message },
-      { status: 500 },
-    );
+    return NextResponse.json({
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+      timestamp: new Date().toISOString(),
+      results: [],
+      summary: {
+        total_time_ms: 0,
+        parallel_time_ms: 0,
+        slowest: { name: "—", time_ms: 0 },
+        recommendations: ["Тест упал. Смотрите error и stack выше."],
+      },
+      data_source: { type: "gas", host: GAS_URL, expected_latency_ms: 2000 },
+    });
   }
 }
