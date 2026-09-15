@@ -100,7 +100,26 @@ export default function PerformancePage() {
         {loading ? "Тестирование..." : "Запустить тест"}
       </button>
 
-      {testResult && (
+      {testResult && testResult.error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
+          <h3 className="font-semibold text-red-700 mb-2">Ошибка теста</h3>
+          <p className="text-sm text-red-600 font-mono whitespace-pre-wrap">
+            {testResult.error}
+          </p>
+          {testResult.stack && (
+            <details className="mt-3">
+              <summary className="text-xs text-red-500 cursor-pointer">
+                Стек
+              </summary>
+              <pre className="text-xs text-red-400 mt-2 whitespace-pre-wrap">
+                {testResult.stack}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
+
+      {testResult && testResult.summary && (
         <div className="space-y-6">
           {/* Итог */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -111,8 +130,9 @@ export default function PerformancePage() {
                   Реальное время (параллельно)
                 </p>
                 <p className="text-2xl font-bold">
-                  {testResult.summary.parallel_time_ms ||
-                    testResult.summary.total_time_ms}
+                  {testResult.summary.parallel_time_ms ??
+                    testResult.summary.total_time_ms ??
+                    0}
                   мс
                 </p>
               </div>
