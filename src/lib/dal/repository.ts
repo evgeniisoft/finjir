@@ -3,9 +3,10 @@
  * FinEngine 2026 - Repository Pattern (DAL)
  * ============================================
  * Абстракция над источником данных.
- * Сейчас: Google Sheets через GAS
- * Потом: PostgreSQL
+ * Сейчас: Google Sheets через GAS / PostgreSQL (Neon)
  */
+
+import { prisma } from '@/lib/prisma';
 
 export interface Repository {
   getAll(entity: string): Promise<any[]>;
@@ -17,6 +18,33 @@ export interface Repository {
   deleteByHash(entity: string, hash: string): Promise<any>;
 }
 
+// ============================================
+// Маппинг entity (имя листа GAS) → модель Prisma
+// ============================================
+const ENTITY_TO_MODEL: Record<string, string> = {
+  Settings: 'setting',
+  Companies: 'company',
+  Accounts: 'account',
+  Counterparties: 'counterparty',
+  Transactions: 'transaction',
+  Budgets: 'budget',
+  Users: 'user',
+  AuditLog: 'auditLogEntry',
+  ExchangeRates: 'exchangeRate',
+  JournalEntries: 'journalEntry',
+};
+
+function getModel(entity: string): any {
+  const modelName = ENTITY_TO_MODEL[entity];
+  if (!modelName) {
+    throw new Error(`Неизвестная сущность: ${entity}`);
+  }
+  return (prisma as any)[modelName];
+}
+
+// ============================================
+// SheetsRepository — как было (для отката)
+// ============================================
 class SheetsRepository implements Repository {
   private baseUrl: string;
 
@@ -77,54 +105,108 @@ class SheetsRepository implements Repository {
   }
 }
 
+// ============================================
+// PostgresRepository — новая реализация
+// ============================================
 class PostgresRepository implements Repository {
-  // Будет реализовано при переходе на PostgreSQL
-  // Использует Prisma или pg
 
   async getAll(entity: string): Promise<any[]> {
-    throw new Error('PostgresRepository не реализован');
+    const model = getModel(entity);
+    return model.findMany();
   }
 
   async getById(entity: string, id: string): Promise<any> {
-    throw new Error('PostgresRepository не реализован');
+    const model = getModel(entity);
+    return model.findUnique({ where: { id } });
   }
 
   async create(entity: string, data: any): Promise<any> {
-    throw new Error('PostgresRepository не реализован');
+    const model = getModel(entity);
+    // Убираем id, если пустой — Prisma сгенерирует uuid сама
+    const clean = { ...data };
+    if (!clean.id || clean.id === '') delete clean.id;
+    // Убираем пустые даты
+    for (const key of Object.keys(clean)) {
+      if (clean[key] === '') {
+        // Для не-строковых полей пустая строка недопустима
+        if (key.endsWith('_at') || key.endsWith('_date')) {
+          clean[key] = null;
+        }
+      }
+    }
+    return model.create({ data: clean });
   }
 
   async update(entity: string, id: string, data: any): Promise<any> {
-    throw new Error('PostgresRepository не реализован');
+    const model = getModel(entity);
+    const clean = { ...data };
+    delete clean.id;
+    for (const key of Object.keys(clean)) {
+      if (clean[key] === '') {
+        if (key.endsWith('_at') || key.endsWith('_date')) {
+          clean[key] = null;
+        }
+      }
+    }
+    return model.update({ where: { id }, data: clean });
   }
 
   async delete(entity: string, id: string): Promise<boolean> {
-    throw new Error('PostgresRepository не реализован');
+    const model = getModel(entity);
+    try {
+      await model.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async batchCreate(entity: string, dataArray: any[]): Promise<any> {
-    throw new Error('PostgresRepository не реализован');
+    const model = getModel(entity);
+    const cleanArray = dataArray.map((d) => {
+      const clean = { ...d };
+      if (!clean.id || clean.id === '') delete clean.id;
+      for (const key of Object.keys(clean)) {
+        if (clean[key] === '') {
+          if (key.endsWith('_at') || key.endsWith('_date')) {
+            clean[key] = null;
+          }
+        }
+      }
+      return clean;
+    });
+    const result = await model.createMany({ data: cleanArray, skipDuplicates: true });
+    return { success: true, count: result.count };
   }
 
   async deleteByHash(entity: string, hash: string): Promise<any> {
-    throw new Error('PostgresRepository не реализован');
+    const model = getModel(entity);
+    try {
+      const result = await model.deleteMany({ where: { import_hash: hash } });
+      return { success: true, count: result.count };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
   }
 }
 
+// ============================================
+// Фабрика
+// ============================================
 let repositoryInstance: Repository | null = null;
 
 export function getRepository(): Repository {
   if (!repositoryInstance) {
-    const dbType = process.env.DB_TYPE || 'sheets';
+    const dbType = process.env.DB_TYPE || 'postgresql';
 
-    if (dbType === 'postgresql') {
-      repositoryInstance = new PostgresRepository();
-    } else {
+    if (dbType === 'sheets') {
       repositoryInstance = new SheetsRepository();
+    } else {
+      repositoryInstance = new PostgresRepository();
     }
   }
 
   return repositoryInstance;
 }
 
-// Для обратной совместимости
 export const repository = getRepository();
