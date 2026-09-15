@@ -73,7 +73,6 @@ export default function ReportsPage() {
                     const monthlyResult = await monthlyResponse.json();
                     setMonthlyData(Array.isArray(monthlyResult.periods) ? monthlyResult.periods : []);
                 } else {
-                    // По компаниям — загружаем для каждой компании
                     const companiesForMonthly = companiesData.length > 0 ? companiesData : await api.getAll('Companies');
                     const allMonthly: any[] = [];
                     for (const company of companiesForMonthly) {
@@ -128,7 +127,6 @@ export default function ReportsPage() {
             setDrilldownLoading(true);
             setActiveDrilldown(rowId);
 
-            // РАСЧЁТНЫЕ ПОКАЗАТЕЛИ — НЕТ DRILL-DOWN
             if (rowId === 'gross' || rowId === 'net' || rowId === 'profit' ||
                 rowId === 'total_income' || rowId === 'total_expense' ||
                 rowId === 'start' || rowId === 'end' ||
@@ -145,9 +143,7 @@ export default function ReportsPage() {
             let typeParam = 'all';
             const companyParam = companyId ? `&company_id=${companyId}` : '';
 
-            // Определяем фильтры по статье
             switch (rowId) {
-                // PnL
                 case 'revenue':
                     typeParam = 'income';
                     break;
@@ -173,38 +169,29 @@ export default function ReportsPage() {
                     accountId = 'acc-tax-usn';
                     typeParam = 'expense';
                     break;
-
-                // ДДС — операционная деятельность
                 case 'op_in':
                     typeParam = 'cash_in_operating';
                     break;
                 case 'op_out':
                     typeParam = 'cash_out_operating';
                     break;
-
-                // ДДС — инвестиционная деятельность
                 case 'inv_in':
                     typeParam = 'cash_in_investing';
                     break;
                 case 'inv_out':
                     typeParam = 'cash_out_investing';
                     break;
-
-                // ДДС — финансовая деятельность
                 case 'fin_in':
                     typeParam = 'cash_in_financing';
                     break;
                 case 'fin_out':
                     typeParam = 'cash_out_financing';
                     break;
-
-                // ДДС — остатки (расчётные — не кликабельны)
                 case 'start':
                 case 'end':
                     setDrilldownData([]);
                     setDrilldownLoading(false);
                     return;
-
                 default:
                     if (rowId.startsWith('acc-')) {
                         accountId = rowId;
@@ -423,7 +410,7 @@ export default function ReportsPage() {
                                     <div key={report.company.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
                                         <h3 className="text-lg font-semibold text-gray-900 mb-4">{report.company.name}</h3>
                                         {activeTab === 'pnl' && report.report && (
-                                            <PnlView data={{ ...report.report, company_id: report.company.id }} expandedRow={expandedRow} setExpandedRow={setExpandedRow} onDrilldown={loadDrilldown} drilldownData={drilldownData} drilldownLoading={drilldownLoading} activeDrilldown={activeDrilldown} />
+                                            <PnlView data={{ ...report.report, company_id: report.company.id }} company={report.company} expandedRow={expandedRow} setExpandedRow={setExpandedRow} onDrilldown={loadDrilldown} drilldownData={drilldownData} drilldownLoading={drilldownLoading} activeDrilldown={activeDrilldown} />
                                         )}
                                         {activeTab === 'cashflow' && report.report && (
                                             <CashFlowView data={{ ...report.report, company_id: report.company.id }} expandedRow={expandedRow} setExpandedRow={setExpandedRow} onDrilldown={loadDrilldown} drilldownData={drilldownData} drilldownLoading={drilldownLoading} activeDrilldown={activeDrilldown} />
@@ -438,7 +425,7 @@ export default function ReportsPage() {
                                 <CalendarView transactions={transactions} companies={companies} companyId={null} accounts={accounts} counterparties={counterparties} settings={settings} />
                             )}
                             {activeTab === 'calendar' && viewMode === 'by_company' && companies.map((company: any) => (
-                                <CalendarView key={company.id} transactions={transactions} companies={companies} companyId={company.id} accounts={accounts} counterparties={counterparties} />
+                                <CalendarView key={company.id} transactions={transactions} companies={companies} companyId={company.id} accounts={accounts} counterparties={counterparties} settings={settings} />
                             ))}
 
                             {activeTab === 'gaps' && viewMode === 'consolidated' && (
@@ -458,7 +445,16 @@ export default function ReportsPage() {
 // ============================================
 // PNL VIEW
 // ============================================
-function PnlView({ data, expandedRow, setExpandedRow, onDrilldown, drilldownData, drilldownLoading, activeDrilldown }: any) {
+function PnlView({ data, company, expandedRow, setExpandedRow, onDrilldown, drilldownData, drilldownLoading, activeDrilldown }: any) {
+    const taxSystem = company?.tax_system || '';
+    const taxLabel = taxSystem === 'OSNO'
+        ? 'Налог на прибыль (ОСНО)'
+        : taxSystem === 'USN_15'
+            ? 'Налог УСН 15%'
+            : taxSystem === 'USN_6'
+                ? 'Налог УСН 6%'
+                : 'Налог (УСН/прибыль)';
+
     const rows = [
         { id: 'revenue', label: 'Выручка', value: data.revenue, type: 'income' },
         { id: 'cogs', label: 'Себестоимость', value: data.cost_of_goods_sold, type: 'expense' },
@@ -467,7 +463,7 @@ function PnlView({ data, expandedRow, setExpandedRow, onDrilldown, drilldownData
         { id: 'insurance', label: 'Страховые взносы', value: data.insurance_amount || 0, type: 'expense' },
         { id: 'ndfl', label: 'НДФЛ', value: data.ndfl_amount || 0, type: 'expense' },
         { id: 'depreciation', label: 'Амортизация', value: data.depreciation, type: 'expense' },
-        { id: 'taxes', label: 'Налог на прибыль (УСН)', value: data.taxes, type: 'expense' },
+        { id: 'taxes', label: taxLabel, value: data.taxes, type: 'expense' },
         { id: 'net', label: 'Чистая прибыль', value: data.net_profit, type: 'total', bold: true, green: true },
     ];
 
@@ -637,12 +633,6 @@ function DrilldownPanel({ data, loading, active }: any) {
 // MONTHLY TABLE VIEW
 // ============================================
 function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drilldownData, drilldownLoading, activeDrilldown }: any) {
-    if (!accounts || accounts.length === 0) {
-        console.error('MonthlyTableView: accounts пустой');
-    }
-    if (!data || data.length === 0) {
-        console.error('MonthlyTableView: data пустой');
-    }
     if (!data || data.length === 0) {
         return (
             <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
@@ -687,13 +677,11 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
                 expenseAccounts.forEach((a: any) => rows.push({ id: a.id, label: a.name, getValue: (d: any) => d.details?.[a.id] || 0, color: 'text-red-600', bold: false, rowType: 'expense' }));
                 rows.push({ id: 'total_expense', label: 'Итого расходы', getValue: (d: any) => d.expenses || 0, color: 'text-red-600', bold: true, rowType: 'all' });
 
-                // Налоги
                 rows.push({ id: 'tax_header_pnl', label: 'Налоги', getValue: () => '', color: 'text-gray-900', bold: true, rowType: '' });
                 rows.push({ id: 'tax_insurance_pnl', label: '  Страховые взносы', getValue: (d: any) => d.details?.['acc-tax-insurance'] || 0, color: 'text-red-600', bold: false, rowType: 'expense' });
                 rows.push({ id: 'tax_ndfl_pnl', label: '  НДФЛ', getValue: (d: any) => d.details?.['acc-tax-ndfl'] || 0, color: 'text-red-600', bold: false, rowType: 'expense' });
                 rows.push({ id: 'tax_usn_pnl', label: '  Налог УСН', getValue: (d: any) => d.details?.['acc-tax-usn'] || 0, color: 'text-red-600', bold: false, rowType: 'expense' });
                 rows.push({ id: 'tax_profit_pnl', label: '  Налог на прибыль', getValue: (d: any) => d.details?.['acc-tax-profit'] || 0, color: 'text-red-600', bold: false, rowType: 'expense' });
-                // НДС для ОСНО не вычитается из прибыли — не показываем
                 rows.push({
                     id: 'total_taxes_pnl',
                     label: 'Итого налоги',
@@ -716,7 +704,6 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
 
                 rows.push({ id: 'op_header', label: 'Операционная деятельность', getValue: () => '', color: 'text-gray-900', bold: true, rowType: '' });
 
-                // Поступления по денежным счетам (все притоки)
                 cashAccounts.forEach((a: any) => rows.push({
                     id: `in_${a.id}`,
                     label: `  Поступление: ${a.name}`,
@@ -726,7 +713,6 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
                     rowType: 'income'
                 }));
 
-                // Выбытия по расходным счетам
                 expenseAccounts.forEach((a: any) => rows.push({
                     id: a.id,
                     label: `  ${a.name}`,
@@ -771,7 +757,6 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
 
                 rows.push({ id: 'assets_header', label: 'АКТИВЫ', getValue: () => '', color: 'text-gray-900', bold: true, rowType: '' });
 
-                // Денежные счета
                 cashAccounts.forEach((a: any) => rows.push({
                     id: a.id,
                     label: `  ${a.name}`,
@@ -781,7 +766,6 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
                     rowType: 'all'
                 }));
 
-                // Прочие активы (дебиторка, запасы, ОС)
                 assetAccounts.forEach((a: any) => rows.push({
                     id: a.id,
                     label: `  ${a.name}`,
@@ -802,7 +786,6 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
 
                 rows.push({ id: 'liab_header', label: 'ПАССИВЫ', getValue: () => '', color: 'text-gray-900', bold: true, rowType: '' });
 
-                // Обязательства
                 liabilityAccounts.forEach((a: any) => rows.push({
                     id: a.id,
                     label: `  ${a.name}`,
@@ -812,7 +795,6 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
                     rowType: 'all'
                 }));
 
-                // Задолженность по налогам
                 rows.push({
                     id: 'acc-tax-liability',
                     label: '  Задолженность по налогам',
@@ -833,7 +815,6 @@ function MonthlyTableView({ data, type, periodType, accounts, onDrilldown, drill
 
                 rows.push({ id: 'equity_header', label: 'КАПИТАЛ', getValue: () => '', color: 'text-gray-900', bold: true, rowType: '' });
 
-                // Капитал
                 equityAccounts.forEach((a: any) => rows.push({
                     id: a.id,
                     label: `  ${a.name}`,
@@ -1004,7 +985,6 @@ function buildCalendarPeriod(label: string, periodTx: any[], accounts?: any[], c
     const inflow = inflowTransactions.reduce((s, t) => s + parseFloat(t.amount || 0), 0);
     const outflow = outflowTransactions.reduce((s, t) => s + parseFloat(t.amount || 0), 0);
 
-    // Детализация по контрагентам (для поступлений)
     const inflowByCounterparty: { [key: string]: number } = {};
     inflowTransactions.forEach(t => {
         const cp = counterparties?.find((c: any) => c.id === t.counterparty_id);
@@ -1012,7 +992,6 @@ function buildCalendarPeriod(label: string, periodTx: any[], accounts?: any[], c
         inflowByCounterparty[cpName] = (inflowByCounterparty[cpName] || 0) + parseFloat(t.amount || 0);
     });
 
-    // Детализация по статьям (для выбытий)
     const outflowByCategory: { [key: string]: number } = {};
     outflowTransactions.forEach(t => {
         const acc = accounts?.find((a: any) => a.id === t.debit_account_id);
@@ -1035,12 +1014,10 @@ function buildCalendarPeriod(label: string, periodTx: any[], accounts?: any[], c
 // ============================================
 function CalendarView({ transactions, companies, companyId, accounts, counterparties, settings }: any) {
     const [showMode, setShowMode] = useState<'upcoming' | 'all'>('upcoming');
-    const [days, setDays] = useState(30);
     const [currentBalance, setCurrentBalance] = useState<number>(0);
 
     const today = new Date().toISOString().split('T')[0];
 
-    // Загружаем остаток через API баланса (как в Балансе)
     useEffect(() => {
         const loadBalance = async () => {
             try {
@@ -1062,7 +1039,6 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
         ? transactions.filter((t: any) => t.company_id === companyId)
         : transactions;
 
-    // Добавляем налоговые платежи
     const taxPayments = getTaxPayments(companies, accounts, settings || []);
     const taxPaymentsForCompany = taxPayments.filter(tp => !companyId || tp.company_id === companyId);
     const allTransactions = [...filteredTx, ...taxPaymentsForCompany];
@@ -1071,13 +1047,10 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
         ? companies.find((c: any) => c.id === companyId)?.name || ''
         : 'Консолидированный';
 
-    // Остаток берётся из API баланса (см. useEffect выше)
-
-    // Горизонт: текущий месяц + следующий месяц
     const now = new Date();
     const horizonEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
     const horizonEndStr = horizonEnd.toISOString().split('T')[0];
-    // Предстоящие операции
+
     const upcomingTx = allTransactions
         .filter((t: any) => {
             const txDate = typeof t.date === 'string' ? t.date.split('T')[0] : t.date;
@@ -1089,7 +1062,6 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
             return da.localeCompare(db);
         });
 
-    // Показывать только предстоящие или все (включая прошедшие)
     const displayPayments = showMode === 'upcoming'
         ? upcomingTx.filter((t: any) => t.type === 'expense')
         : allTransactions.filter((t: any) => t.type === 'expense');
@@ -1098,7 +1070,6 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
         ? upcomingTx.filter((t: any) => t.type === 'income')
         : allTransactions.filter((t: any) => t.type === 'income');
 
-    // Прогноз по дням
     const forecast: any[] = [];
     let runningBalance = currentBalance;
 
@@ -1119,7 +1090,6 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
 
     return (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-            {/* Шапка */}
             <div className="p-6 border-b border-gray-100">
                 <div className="flex items-center justify-between">
                     <div>
@@ -1133,9 +1103,7 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
                 </div>
             </div>
 
-            {/* Две колонки */}
             <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
-                {/* Платежи */}
                 <div className="p-6">
                     <h4 className="text-sm font-semibold text-red-600 mb-4">
                         ПРЕДСТОЯЩИЕ ПЛАТЕЖИ ({displayPayments.length})
@@ -1146,7 +1114,6 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
                         <div className="space-y-3">
                             {displayPayments.slice(0, 10).map((t: any, idx: number) => {
                                 const txDate = typeof t.date === 'string' ? t.date.split('T')[0] : t.date;
-                                const acc = accounts?.find((a: any) => a.id === t.debit_account_id);
                                 const cp = counterparties?.find((c: any) => c.id === t.counterparty_id);
                                 const amount = parseFloat(t.amount || 0);
 
@@ -1174,7 +1141,6 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
                     )}
                 </div>
 
-                {/* Поступления */}
                 <div className="p-6">
                     <h4 className="text-sm font-semibold text-green-600 mb-4">
                         ПРЕДСТОЯЩИЕ ПОСТУПЛЕНИЯ ({displayInflows.length})
@@ -1212,9 +1178,7 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
                 </div>
             </div>
 
-            {/* Прогноз по дням */}
             {forecast.length > 0 && (() => {
-                // Группируем прогноз по датам
                 const groupedByDate = new Map<string, any[]>();
                 forecast.forEach(f => {
                     if (!groupedByDate.has(f.date)) {
@@ -1266,7 +1230,6 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
                                             </div>
                                         </div>
 
-                                        {/* Раскрытие деталей */}
                                         {isExpanded && (
                                             <div className="p-3 border-t border-gray-100 bg-gray-50/50">
                                                 {items.map((item: any, idx: number) => (
@@ -1287,7 +1250,6 @@ function CalendarView({ transactions, companies, companyId, accounts, counterpar
                             })}
                         </div>
 
-                        {/* Предупреждение о кассовом разрыве */}
                         {forecast.some(f => f.balance_after < 0) && (
                             <div className="mt-3 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
                                 ⚠️ Обнаружен кассовый разрыв! Остаток станет отрицательным.
@@ -1309,7 +1271,6 @@ function getTaxPayments(companies: any[], accounts: any[], settings: any[]): any
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth() + 1;
 
-    // Настройки
     const settingsMap: any = {};
     settings.forEach(s => {
         settingsMap[s.key] = s.value;
@@ -1324,13 +1285,11 @@ function getTaxPayments(companies: any[], accounts: any[], settings: any[]): any
         const hasEmployees = company.has_employees === true || company.has_employees === 'true';
         const payroll = company.monthly_payroll || 0;
 
-        // Страховые взносы — ежемесячно до 15 числа следующего месяца
         if (hasEmployees && payroll > 0) {
             const insuranceAmount = payroll * parseFloat(settingsMap['insurance_base_rate'] || '0.30');
 
-            // Следующие 3 месяца
             for (let i = 0; i < 3; i++) {
-                const paymentMonth = currentMonth + i + 1; // следующий месяц
+                const paymentMonth = currentMonth + i + 1;
                 const paymentYear = currentYear + Math.floor((paymentMonth - 1) / 12);
                 const actualMonth = ((paymentMonth - 1) % 12) + 1;
                 const paymentDate = `${paymentYear}-${String(actualMonth).padStart(2, '0')}-${String(insuranceDay).padStart(2, '0')}`;
@@ -1350,7 +1309,6 @@ function getTaxPayments(companies: any[], accounts: any[], settings: any[]): any
             }
         }
 
-        // НДФЛ — ежемесячно до 15 числа следующего месяца
         if (hasEmployees && payroll > 0) {
             const ndflAmount = payroll * parseFloat(settingsMap['ndfl_base_rate'] || '0.13');
 
@@ -1375,10 +1333,8 @@ function getTaxPayments(companies: any[], accounts: any[], settings: any[]): any
             }
         }
 
-        // УСН / Налог на прибыль — ежеквартально
         if (company.tax_system === 'USN_6' || company.tax_system === 'USN_15' || company.tax_system === 'OSNO') {
-            const quarterMonths = [3, 6, 9, 12]; // Конец кварталов
-            const currentQuarter = Math.ceil(currentMonth / 3);
+            const quarterMonths = [3, 6, 9, 12];
 
             for (const qMonth of quarterMonths) {
                 if (qMonth > currentMonth) {
@@ -1391,7 +1347,7 @@ function getTaxPayments(companies: any[], accounts: any[], settings: any[]): any
                         company_name: company.name,
                         type: 'expense',
                         description: taxLabel,
-                        amount: 0, // Рассчитывается в налоговом движке
+                        amount: 0,
                         counterparty_name: 'ИФНС',
                         is_tax: true,
                         tax_type: company.tax_system === 'OSNO' ? 'profit' : 'usn',
@@ -1401,7 +1357,6 @@ function getTaxPayments(companies: any[], accounts: any[], settings: any[]): any
             }
         }
 
-        // НДС — ежеквартально (для ОСНО)
         if (company.tax_system === 'OSNO') {
             const quarterMonths = [3, 6, 9, 12];
 
@@ -1428,4 +1383,3 @@ function getTaxPayments(companies: any[], accounts: any[], settings: any[]): any
 
     return payments;
 }
-
