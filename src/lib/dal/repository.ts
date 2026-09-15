@@ -97,10 +97,16 @@ class SheetsRepository implements Repository {
   }
 
   async getAll(entity: string): Promise<any[]> {
-    const url = `${this.baseUrl}?action=getAll&sheet=${entity}`;
-    const response = await fetch(url, { cache: 'no-store' });
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    const model = getModel(entity);
+    const rows = await model.findMany();
+    return rows.map((row: any) => {
+      const normalized = normalizeDates(row, entity);
+      // Скрываем пароль при чтении Users
+      if (entity === 'Users' && normalized.password !== undefined) {
+        delete normalized.password;
+      }
+      return normalized;
+    });
   }
 
   async getById(entity: string, id: string): Promise<any> {
@@ -155,7 +161,14 @@ class PostgresRepository implements Repository {
   async getAll(entity: string): Promise<any[]> {
     const model = getModel(entity);
     const rows = await model.findMany();
-    return rows.map((row: any) => normalizeDates(row, entity));
+    return rows.map((row: any) => {
+      const normalized = normalizeDates(row, entity);
+      // Скрываем пароль при чтении Users
+      if (entity === 'Users' && normalized.password !== undefined) {
+        delete normalized.password;
+      }
+      return normalized;
+    });
   }
 
   async getById(entity: string, id: string): Promise<any> {
