@@ -151,7 +151,8 @@ export class FinancialCalculator {
     const endingBalance = startingBalance +
       operatingInflow - operatingOutflow +
       investingInflow - investingOutflow +
-      financingInflow - financingOutflow;
+      financingInflow - financingOutflow -
+      taxOutflow;
 
     return {
       period_start: periodStart,
