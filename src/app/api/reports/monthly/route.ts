@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { monthlyEngine } from '@/lib/engine/monthly';
 import { taxEngine } from '@/lib/engine/tax';
-
-const GAS_URL = process.env.NEXT_PUBLIC_GAS_URL || 'https://script.google.com/macros/s/AKfycbzdcT2cZO5ynSBVMWakir1Y5aAaf5MJaqRq1C8zXDrECdaLbtT_yw3idz7FUNjpMShriw/exec';
-
-async function gasGet(sheet: string): Promise<any[]> {
-  const url = `${GAS_URL}?action=getAll&sheet=${sheet}`;
-  const response = await fetch(url);
-  const data = await response.json();
-  return Array.isArray(data) ? data : [];
-}
+import { getRepository } from '@/lib/dal/repository';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,14 +12,14 @@ export async function GET(request: NextRequest) {
     const periodType = url.searchParams.get('period_type') || 'monthly';
     const reportType = url.searchParams.get('report_type') || 'pnl';
 
+    const repo = getRepository();
     const [transactions, accounts, companies, settings] = await Promise.all([
-      gasGet('Transactions'),
-      gasGet('Accounts'),
-      gasGet('Companies'),
-      gasGet('Settings')
+      repo.getAll('Transactions'),
+      repo.getAll('Accounts'),
+      repo.getAll('Companies'),
+      repo.getAll('Settings'),
     ]);
 
-    // Загружаем настройки в taxEngine
     await taxEngine.loadSettings(settings);
 
     let data;
@@ -45,7 +37,6 @@ export async function GET(request: NextRequest) {
         reportType as any
       );
     } else {
-      // Агрегируем по всем компаниям
       const allData = companies.flatMap((company: any) =>
         monthlyEngine.getPeriodBreakdown(
           transactions,
@@ -58,12 +49,10 @@ export async function GET(request: NextRequest) {
           reportType as any
         )
       );
-      // Агрегируем по периодам
       const periodsMap = new Map<string, any>();
 
       for (const item of allData) {
         if (!periodsMap.has(item.period)) {
-          // Инициализируем аккумулятор нулями
           periodsMap.set(item.period, {
             period: item.period,
             revenue: 0,
@@ -75,7 +64,7 @@ export async function GET(request: NextRequest) {
             starting_balance: 0,
             ending_balance: 0,
             tax_outflow: 0,
-            details: {}
+            details: {},
           });
         }
         const existing = periodsMap.get(item.period)!;
@@ -89,7 +78,6 @@ export async function GET(request: NextRequest) {
         existing.ending_balance += item.ending_balance;
         existing.tax_outflow += item.tax_outflow || 0;
 
-        // Объединяем details
         for (const [accId, amount] of Object.entries(item.details)) {
           existing.details[accId] = (existing.details[accId] || 0) + (amount as number);
         }
@@ -98,7 +86,6 @@ export async function GET(request: NextRequest) {
       data = Array.from(periodsMap.values())
         .sort((a, b) => a.period.localeCompare(b.period));
 
-      // Пересчитываем starting_balance/ending_balance для консолидированного отчёта
       for (let i = 0; i < data.length; i++) {
         if (i === 0) {
           data[i].ending_balance = data[i].starting_balance + data[i].cash_in - data[i].cash_out - (data[i].tax_outflow || 0);
@@ -112,13 +99,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       periods: data,
       accounts: accounts,
-      report_type: reportType
+      report_type: reportType,
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ошибка API:', error);
     return NextResponse.json(
-      { error: 'Внутренняя ошибка: ' + (error as Error).message },
+      { error: 'Внутренняя ошибка: ' + error.message },
       { status: 500 }
     );
   }
