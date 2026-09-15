@@ -3,7 +3,7 @@
  * FinEngine 2026 - Repository Pattern (DAL)
  * ============================================
  * Абстракция над источником данных.
- * Сейчас: Google Sheets через GAS / PostgreSQL (Neon)
+ * Сейчас: PostgreSQL (Neon) / Google Sheets через GAS
  */
 
 import { prisma } from '@/lib/prisma';
@@ -34,6 +34,19 @@ const ENTITY_TO_MODEL: Record<string, string> = {
   JournalEntries: 'journalEntry',
 };
 
+const MODEL_TO_TABLE: Record<string, string> = {
+  setting: 'settings',
+  company: 'companies',
+  account: 'accounts',
+  counterparty: 'counterparties',
+  transaction: 'transactions',
+  budget: 'budgets',
+  user: 'users',
+  auditLogEntry: 'audit_log',
+  exchangeRate: 'exchange_rates',
+  journalEntry: 'journal_entries',
+};
+
 function getModel(entity: string): any {
   const modelName = ENTITY_TO_MODEL[entity];
   if (!modelName) {
@@ -43,7 +56,36 @@ function getModel(entity: string): any {
 }
 
 // ============================================
-// SheetsRepository — как было (для отката)
+// Нормализация дат: Prisma Date → ISO-строка (как было в GAS)
+// ============================================
+const DATE_FIELDS: Record<string, string[]> = {
+  transactions: ['date', 'accrual_date'],
+  companies: ['deleted_at'],
+  accounts: ['deleted_at'],
+  counterparties: ['deleted_at'],
+  users: ['last_login', 'deleted_at'],
+  audit_log: ['timestamp'],
+  exchange_rates: ['date'],
+  journal_entries: ['date'],
+};
+
+function normalizeDates(row: any, entity: string): any {
+  const modelName = ENTITY_TO_MODEL[entity];
+  if (!modelName) return row;
+  const tableName = MODEL_TO_TABLE[modelName];
+  const fields = DATE_FIELDS[tableName] || [];
+  const result = { ...row };
+  for (const field of fields) {
+    const v = result[field];
+    if (v instanceof Date) {
+      result[field] = v.toISOString();
+    }
+  }
+  return result;
+}
+
+// ============================================
+// SheetsRepository — для отката
 // ============================================
 class SheetsRepository implements Repository {
   private baseUrl: string;
@@ -106,49 +148,7 @@ class SheetsRepository implements Repository {
 }
 
 // ============================================
-// Нормализация дат: Prisma Date → ISO-строка (как было в GAS)
-// ============================================
-const MODEL_TO_TABLE: Record<string, string> = {
-  setting: 'settings',
-  company: 'companies',
-  account: 'accounts',
-  counterparty: 'counterparties',
-  transaction: 'transactions',
-  budget: 'budgets',
-  user: 'users',
-  auditLogEntry: 'audit_log',
-  exchangeRate: 'exchange_rates',
-  journalEntry: 'journal_entries',
-};
-
-const DATE_FIELDS: Record<string, string[]> = {
-  transactions: ['date', 'accrual_date'],
-  companies: ['deleted_at'],
-  accounts: ['deleted_at'],
-  counterparties: ['deleted_at'],
-  users: ['last_login', 'deleted_at'],
-  audit_log: ['timestamp'],
-  exchange_rates: ['date'],
-  journal_entries: ['date'],
-};
-
-function normalizeDates(row: any, entity: string): any {
-  const modelName = ENTITY_TO_MODEL[entity];
-  if (!modelName) return row;
-  const tableName = MODEL_TO_TABLE[modelName];
-  const fields = DATE_FIELDS[tableName] || [];
-  const result = { ...row };
-  for (const field of fields) {
-    const v = result[field];
-    if (v instanceof Date) {
-      result[field] = v.toISOString();
-    }
-  }
-  return result;
-}
-
-// ============================================
-// PostgresRepository — новая реализация
+// PostgresRepository — реализация через Prisma
 // ============================================
 class PostgresRepository implements Repository {
 
@@ -158,21 +158,25 @@ class PostgresRepository implements Repository {
     return rows.map((row: any) => normalizeDates(row, entity));
   }
 
+  async getById(entity: string, id: string): Promise<any> {
+    const model = getModel(entity);
+    const row = await model.findUnique({ where: { id } });
+    return row ? normalizeDates(row, entity) : null;
+  }
+
   async create(entity: string, data: any): Promise<any> {
     const model = getModel(entity);
-    // Убираем id, если пустой — Prisma сгенерирует uuid сама
     const clean = { ...data };
     if (!clean.id || clean.id === '') delete clean.id;
-    // Убираем пустые даты
     for (const key of Object.keys(clean)) {
       if (clean[key] === '') {
-        // Для не-строковых полей пустая строка недопустима
         if (key.endsWith('_at') || key.endsWith('_date')) {
           clean[key] = null;
         }
       }
     }
-    return model.create({ data: clean });
+    const row = await model.create({ data: clean });
+    return normalizeDates(row, entity);
   }
 
   async update(entity: string, id: string, data: any): Promise<any> {
@@ -186,7 +190,8 @@ class PostgresRepository implements Repository {
         }
       }
     }
-    return model.update({ where: { id }, data: clean });
+    const row = await model.update({ where: { id }, data: clean });
+    return normalizeDates(row, entity);
   }
 
   async delete(entity: string, id: string): Promise<boolean> {
@@ -236,14 +241,12 @@ let repositoryInstance: Repository | null = null;
 export function getRepository(): Repository {
   if (!repositoryInstance) {
     const dbType = process.env.DB_TYPE || 'postgresql';
-
     if (dbType === 'sheets') {
       repositoryInstance = new SheetsRepository();
     } else {
       repositoryInstance = new PostgresRepository();
     }
   }
-
   return repositoryInstance;
 }
 
