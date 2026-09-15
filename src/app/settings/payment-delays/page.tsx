@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
 
 export default function PaymentDelaysPage() {
     const [settings, setSettings] = useState<any[]>([]);
@@ -13,38 +14,35 @@ export default function PaymentDelaysPage() {
 
     useEffect(() => {
         loadData();
-    }, [selectedCompany]);
+    }, []);
 
-    const loadData = async () => {
-        try {
-            const session = JSON.parse(localStorage.getItem('finengine_session') || '{}');
-            const dbUrl = session.dbUrl || '';
-
-            const [settingsRes, accountsRes, companiesRes] = await Promise.all([
-                fetch('/api/data?action=getAll&sheet=Settings', { headers: { 'X-DB-URL': dbUrl } }),
-                fetch('/api/data?action=getAll&sheet=Accounts', { headers: { 'X-DB-URL': dbUrl } }),
-                fetch('/api/data?action=getAll&sheet=Companies', { headers: { 'X-DB-URL': dbUrl } })
-            ]);
-
-            const settingsData = await settingsRes.json();
-            const accountsData = await accountsRes.json();
-            const companiesData = await companiesRes.json();
-
-            setSettings(Array.isArray(settingsData) ? settingsData : []);
-            setAccounts(Array.isArray(accountsData) ? accountsData : []);
-            setCompanies(Array.isArray(companiesData) ? companiesData : []);
-
-            // Загружаем отсрочки
+    useEffect(() => {
+        // Пересчитываем delays при смене компании
+        if (selectedCompany && settings.length > 0) {
             const delaysMap: { [key: string]: number } = {};
-            for (const s of Array.isArray(settingsData) ? settingsData : []) {
+            for (const s of settings) {
                 if (s.category === 'payment_delay' && s.key.startsWith(`payment_delay_${selectedCompany}_`)) {
                     const accountId = s.key.replace(`payment_delay_${selectedCompany}_`, '');
                     delaysMap[accountId] = parseFloat(s.value || '0');
                 }
             }
             setDelays(delaysMap);
+        }
+    }, [selectedCompany, settings]);
 
-            if (companiesData.length > 0) {
+    const loadData = async () => {
+        try {
+            const [settingsData, accountsData, companiesData] = await Promise.all([
+                api.getAll('Settings'),
+                api.getAll('Accounts'),
+                api.getAll('Companies')
+            ]);
+
+            setSettings(Array.isArray(settingsData) ? settingsData : []);
+            setAccounts(Array.isArray(accountsData) ? accountsData : []);
+            setCompanies(Array.isArray(companiesData) ? companiesData : []);
+
+            if (companiesData.length > 0 && !selectedCompany) {
                 setSelectedCompany(companiesData[0].id);
             }
         } catch (error) {
@@ -57,22 +55,17 @@ export default function PaymentDelaysPage() {
     const handleSave = async () => {
         try {
             setSaving(true);
-            const session = JSON.parse(localStorage.getItem('finengine_session') || '{}');
-            const dbUrl = session.dbUrl || '';
 
-            // Сохраняем каждую отсрочку
             for (const [accountId, days] of Object.entries(delays)) {
                 const key = `payment_delay_${selectedCompany}_${accountId}`;
                 const existing = settings.find(s => s.key === key);
 
                 if (existing) {
-                    const url = `${dbUrl}?action=update&sheet=Settings&id=${existing.id}&data=${encodeURIComponent(JSON.stringify({
-                        ...existing,
+                    await api.update('Settings', existing.id, {
                         value: String(days)
-                    }))}`;
-                    await fetch(url);
+                    });
                 } else {
-                    const url = `${dbUrl}?action=create&sheet=Settings&data=${encodeURIComponent(JSON.stringify({
+                    await api.create('Settings', {
                         key,
                         value: String(days),
                         description: `Отсрочка: ${accounts.find(a => a.id === accountId)?.name || accountId}`,
@@ -81,12 +74,12 @@ export default function PaymentDelaysPage() {
                         deleted_at: '',
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString()
-                    }))}`;
-                    await fetch(url);
+                    });
                 }
             }
 
             alert('Отсрочки сохранены');
+            await loadData();
         } catch (error) {
             console.error('Ошибка:', error);
             alert('Ошибка при сохранении');
@@ -99,7 +92,6 @@ export default function PaymentDelaysPage() {
         return <div className="text-center py-12">Загрузка...</div>;
     }
 
-    // Счета, для которых настраиваем отсрочки (доходы и расходы)
     const relevantAccounts = accounts.filter(a =>
         (a.type === 'I' || a.type === 'X') &&
         a.activity_type !== 'investing'
