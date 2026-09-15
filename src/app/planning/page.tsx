@@ -42,9 +42,7 @@ export default function PlanningPage() {
       setCompanies(companiesData);
       setAccounts(accountsData);
       // Загружаем отсрочки
-      const settingsRes = await fetch('/api/data?action=getAll&sheet=Settings', {
-        headers: { 'X-DB-URL': JSON.parse(localStorage.getItem('finengine_session') || '{}').dbUrl || '' }
-      });
+      const settingsRes = await fetch('/api/data?action=getAll&sheet=Settings');
       const settingsData = await settingsRes.json();
       const delaysMap: { [companyId: string]: { [accountId: string]: number } } = {};
       for (const s of Array.isArray(settingsData) ? settingsData : []) {
