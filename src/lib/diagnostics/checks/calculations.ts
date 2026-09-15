@@ -99,11 +99,12 @@ function checkCashFlowFormula(ctx: DiagnosticContext, company: any): DiagnosticC
       ctx.periodStart, ctx.periodEnd, company
     );
 
-    // После правок: ending_balance = start + in - out (без налогов)
+    // ending_balance = start + in - out - tax_outflow
     const expected = cf.starting_balance
       + cf.operating_inflow - cf.operating_outflow
       + cf.investing_inflow - cf.investing_outflow
-      + cf.financing_inflow - cf.financing_outflow;
+      + cf.financing_inflow - cf.financing_outflow
+      - (cf.tax_outflow || 0);
 
     const diff = Math.abs(expected - cf.ending_balance);
 
