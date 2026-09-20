@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 
 export default function CompaniesPage() {
   const [companies, setCompanies] = useState<any[]>([]);
@@ -10,15 +10,15 @@ export default function CompaniesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingCompany, setEditingCompany] = useState<any | null>(null);
   const [formData, setFormData] = useState({
-    name: '',
-    tax_system: 'USN_6',
-    currency: 'RUB',
+    name: "",
+    tax_system: "USN_6",
+    currency: "RUB",
     is_group: false,
-    parent_id: '',
-    inn: '',
-    kpp: '',
-    external_id: '',
-    source: 'manual'
+    parent_id: "",
+    inn: "",
+    kpp: "",
+    external_id: "",
+    source: "manual",
   });
 
   useEffect(() => {
@@ -28,11 +28,11 @@ export default function CompaniesPage() {
   const loadCompanies = async () => {
     try {
       setLoading(true);
-      const data = await api.getAll('Companies');
+      const data = await api.getAll("Companies");
       setCompanies(data);
       setError(null);
     } catch (err) {
-      setError('Ошибка при загрузке компаний');
+      setError("Ошибка при загрузке компаний");
       console.error(err);
     } finally {
       setLoading(false);
@@ -41,6 +41,13 @@ export default function CompaniesPage() {
 
   const handleCreate = async () => {
     try {
+      // Авто-простановка vat_* по tax_system
+      const taxSystem = formData.tax_system;
+      const vatFields =
+        taxSystem === "OSNO"
+          ? { vat_included: true, vat_rate: 0.22, vat_exempt: false }
+          : { vat_included: false, vat_rate: 0, vat_exempt: true };
+
       const newCompany = {
         name: formData.name,
         tax_system: formData.tax_system,
@@ -51,17 +58,18 @@ export default function CompaniesPage() {
         kpp: formData.kpp,
         external_id: formData.external_id,
         source: formData.source,
+        ...vatFields,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        deleted_at: null
+        deleted_at: null,
       };
 
-      await api.create('Companies', newCompany);
+      await api.create("Companies", newCompany);
       setShowForm(false);
       resetForm();
       loadCompanies();
     } catch (err) {
-      setError('Ошибка при создании компании');
+      setError("Ошибка при создании компании");
       console.error(err);
     }
   };
@@ -70,25 +78,34 @@ export default function CompaniesPage() {
     if (!editingCompany) return;
 
     try {
-      await api.update('Companies', editingCompany.id, formData);
+      const taxSystem = formData.tax_system;
+      const vatFields =
+        taxSystem === "OSNO"
+          ? { vat_included: true, vat_rate: 0.22, vat_exempt: false }
+          : { vat_included: false, vat_rate: 0, vat_exempt: true };
+
+      await api.update("Companies", editingCompany.id, {
+        ...formData,
+        ...vatFields,
+      });
       setShowForm(false);
       setEditingCompany(null);
       resetForm();
       loadCompanies();
     } catch (err) {
-      setError('Ошибка при обновлении компании');
+      setError("Ошибка при обновлении компании");
       console.error(err);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Удалить компанию?')) return;
+    if (!confirm("Удалить компанию?")) return;
 
     try {
-      await api.delete('Companies', id);
+      await api.delete("Companies", id);
       loadCompanies();
     } catch (err) {
-      setError('Ошибка при удалении компании');
+      setError("Ошибка при удалении компании");
       console.error(err);
     }
   };
@@ -96,30 +113,30 @@ export default function CompaniesPage() {
   const handleEdit = (company: any) => {
     setEditingCompany(company);
     setFormData({
-      name: company.name || '',
-      tax_system: company.tax_system || 'USN_6',
-      currency: company.currency || 'RUB',
-      is_group: company.is_group === true || company.is_group === 'true',
-      parent_id: company.parent_id || '',
-      inn: company.inn || '',
-      kpp: company.kpp || '',
-      external_id: company.external_id || '',
-      source: company.source || 'manual'
+      name: company.name || "",
+      tax_system: company.tax_system || "USN_6",
+      currency: company.currency || "RUB",
+      is_group: company.is_group === true || company.is_group === "true",
+      parent_id: company.parent_id || "",
+      inn: company.inn || "",
+      kpp: company.kpp || "",
+      external_id: company.external_id || "",
+      source: company.source || "manual",
     });
     setShowForm(true);
   };
 
   const resetForm = () => {
     setFormData({
-      name: '',
-      tax_system: 'USN_6',
-      currency: 'RUB',
+      name: "",
+      tax_system: "USN_6",
+      currency: "RUB",
       is_group: false,
-      parent_id: '',
-      inn: '',
-      kpp: '',
-      external_id: '',
-      source: 'manual'
+      parent_id: "",
+      inn: "",
+      kpp: "",
+      external_id: "",
+      source: "manual",
     });
     setEditingCompany(null);
   };
@@ -149,7 +166,7 @@ export default function CompaniesPage() {
       {showForm && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-lg p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            {editingCompany ? 'Редактировать компанию' : 'Новая компания'}
+            {editingCompany ? "Редактировать компанию" : "Новая компания"}
           </h3>
 
           <div className="space-y-4">
@@ -160,7 +177,9 @@ export default function CompaniesPage() {
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900"
                 placeholder="ООО «Ромашка»"
               />
@@ -173,7 +192,9 @@ export default function CompaniesPage() {
               <input
                 type="text"
                 value={formData.inn}
-                onChange={(e) => setFormData({ ...formData, inn: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, inn: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="7701234567"
               />
@@ -186,7 +207,9 @@ export default function CompaniesPage() {
               <input
                 type="text"
                 value={formData.kpp}
-                onChange={(e) => setFormData({ ...formData, kpp: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, kpp: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="770101001"
               />
@@ -199,7 +222,9 @@ export default function CompaniesPage() {
               <input
                 type="text"
                 value={formData.external_id}
-                onChange={(e) => setFormData({ ...formData, external_id: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, external_id: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="GUID из 1С"
               />
@@ -211,7 +236,9 @@ export default function CompaniesPage() {
               </label>
               <select
                 value={formData.source}
-                onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, source: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="manual">Вручную</option>
@@ -225,7 +252,9 @@ export default function CompaniesPage() {
               </label>
               <select
                 value={formData.tax_system}
-                onChange={(e) => setFormData({ ...formData, tax_system: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, tax_system: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 cursor-pointer"
               >
                 <option value="USN_6">УСН 6%</option>
@@ -240,7 +269,9 @@ export default function CompaniesPage() {
               </label>
               <select
                 value={formData.currency}
-                onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, currency: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 cursor-pointer"
               >
                 <option value="RUB">₽ Рубль</option>
@@ -254,7 +285,9 @@ export default function CompaniesPage() {
               <input
                 type="checkbox"
                 checked={formData.is_group}
-                onChange={(e) => setFormData({ ...formData, is_group: e.target.checked })}
+                onChange={(e) =>
+                  setFormData({ ...formData, is_group: e.target.checked })
+                }
                 className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
               <label className="text-sm font-medium text-gray-700 cursor-pointer">
@@ -267,7 +300,7 @@ export default function CompaniesPage() {
                 onClick={editingCompany ? handleUpdate : handleCreate}
                 className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 active:bg-blue-800 transition-all shadow-sm hover:shadow-md cursor-pointer"
               >
-                {editingCompany ? 'Сохранить изменения' : 'Создать компанию'}
+                {editingCompany ? "Сохранить изменения" : "Создать компанию"}
               </button>
               <button
                 onClick={() => {
@@ -322,14 +355,17 @@ export default function CompaniesPage() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {companies.map((company) => (
-                <tr key={company.id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={company.id}
+                  className="hover:bg-gray-50 transition-colors"
+                >
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
                     {company.name}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
-                    {company.tax_system === 'USN_6' && 'УСН 6%'}
-                    {company.tax_system === 'USN_15' && 'УСН 15%'}
-                    {company.tax_system === 'OSNO' && 'ОСНО'}
+                    {company.tax_system === "USN_6" && "УСН 6%"}
+                    {company.tax_system === "USN_15" && "УСН 15%"}
+                    {company.tax_system === "OSNO" && "ОСНО"}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
                     {company.currency}
