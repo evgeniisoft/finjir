@@ -31,6 +31,7 @@ export default function ReportsPage() {
     start: defaultPeriod.start,
     end: defaultPeriod.end,
   });
+  const [activePreset, setActivePreset] = useState<string>("current_month");
 
   // Данные
   const [reports, setReports] = useState<any>(null);
@@ -271,6 +272,7 @@ export default function ReportsPage() {
         break;
     }
     setPeriod({ start: range.start, end: range.end });
+    setActivePreset(presetId);
   };
 
   // ============================================
@@ -300,42 +302,63 @@ export default function ReportsPage() {
           <div className="flex gap-2">
             <button
               onClick={() => applyPreset("current_month")}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activePreset === "current_month"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
             >
               Текущий месяц
             </button>
             <button
               onClick={() => applyPreset("last_month")}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activePreset === "last_month"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
             >
               Прошлый месяц
             </button>
             <button
               onClick={() => applyPreset("current_year")}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activePreset === "current_year"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
             >
               Текущий год
             </button>
             <button
               onClick={() => applyPreset("last_year")}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activePreset === "last_year"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
             >
               Прошлый год
             </button>
           </div>
-
           <div className="flex items-center gap-2 ml-auto">
             <input
               type="date"
               value={period.start}
-              onChange={(e) => setPeriod({ ...period, start: e.target.value })}
+              onChange={(e) => {
+                setPeriod({ ...period, start: e.target.value });
+                setActivePreset("custom");
+              }}
               className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
             />
             <span className="text-gray-400">—</span>
             <input
               type="date"
               value={period.end}
-              onChange={(e) => setPeriod({ ...period, end: e.target.value })}
+              onChange={(e) => {
+                setPeriod({ ...period, end: e.target.value });
+                setActivePreset("custom");
+              }}
               className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
             />
             <button
