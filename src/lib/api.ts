@@ -17,7 +17,7 @@ export type SheetName =
   | 'Users'
   | 'Notifications'
   | 'DataSources'
-  | 'DataMappings';
+  | 'DataMappings'
   | 'ImportLogs';
 
 class ApiClient {
