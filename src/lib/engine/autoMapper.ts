@@ -14,10 +14,35 @@ const HEADER_PATTERNS: { [target: string]: RegExp[] } = {
   amount: [/сумм/i, /amount/i, /цена/i, /стоимость/i],
   description: [/описан/i, /назначен/i, /содержан/i, /коммент/i, /примечан/i],
   currency: [/валют/i, /currency/i],
-  counterparty: [/контрагент/i, /плательщик/i, /получател/i, /поставщик/i, /покупател/i, /клиент/i],
+  counterparty: [
+    /контрагент/i,
+    /плательщик/i,
+    /получател/i,
+    /поставщик/i,
+    /покупател/i,
+    /клиент/i,
+  ],
   company_id: [/компан/i, /организац/i, /company/i, /фирм/i],
-  debit_account: [/счет\s*дт/i, /счёт\s*дт/i, /дебет/i, /dt/i, /debit/i, /счет\s*деб/i, /счёт\s*деб/i, /^дт$/i],
-  credit_account: [/счет\s*кт/i, /счёт\s*кт/i, /кредит/i, /kt/i, /credit/i, /счет\s*кред/i, /счёт\s*кред/i, /^кт$/i],
+  debit_account: [
+    /счет\s*дт/i,
+    /счёт\s*дт/i,
+    /дебет/i,
+    /dt/i,
+    /debit/i,
+    /счет\s*деб/i,
+    /счёт\s*деб/i,
+    /^дт$/i,
+  ],
+  credit_account: [
+    /счет\s*кт/i,
+    /счёт\s*кт/i,
+    /кредит/i,
+    /kt/i,
+    /credit/i,
+    /счет\s*кред/i,
+    /счёт\s*кред/i,
+    /^кт$/i,
+  ],
   type: [/^тип$/i, /type/i, /вид\s*опер/i],
   inn: [/инн/i],
   kpp: [/кпп/i],
@@ -28,7 +53,10 @@ const HEADER_PATTERNS: { [target: string]: RegExp[] } = {
   accrual_date: [/дата\s*начисл/i, /accrual/i],
 };
 
-export function suggestTargetField(header: string, availableFields: string[]): string | null {
+export function suggestTargetField(
+  header: string,
+  availableFields: string[],
+): string | null {
   const h = header.trim();
 
   for (const [target, patterns] of Object.entries(HEADER_PATTERNS)) {
@@ -50,32 +78,58 @@ export function suggestTargetField(header: string, availableFields: string[]): s
  */
 export function suggestAccountId(
   value: string,
-  accounts: any[]
+  accounts: any[],
 ): string | null {
   if (!value) return null;
   const v = String(value).trim();
   if (!v) return null;
 
-  // 1. По source_code
-  const bySource = accounts.find((a) => String(a.source_code || '').trim() === v);
+  // 1. Точное совпадение по source_code
+  const bySource = accounts.find(
+    (a) => String(a.source_code || "").trim() === v,
+  );
   if (bySource) return bySource.id;
 
-  // 2. По code (нормализуем: убираем ведущие нули)
-  const normalized = v.replace(/^0+/, '');
-  const byCode = accounts.find((a) => String(a.code || '').replace(/^0+/, '') === normalized);
+  // 2. По source_code с префиксом (51 → 51.01, 51.02)
+  // Если в файле "51", а в БД "51.01", "51.02" — берём первый
+  const bySourcePrefix = accounts
+    .filter((a) => {
+      const sc = String(a.source_code || "").trim();
+      return sc.startsWith(v + ".");
+    })
+    .sort((a, b) => String(a.source_code).localeCompare(String(b.source_code)));
+
+  if (bySourcePrefix.length > 0) return bySourcePrefix[0].id;
+
+  // 3. Обратный префикс: в файле "51.01", а в БД "51"
+  const bySourceParent = accounts.find((a) => {
+    const sc = String(a.source_code || "").trim();
+    return v.startsWith(sc + ".") && sc.length > 0;
+  });
+  if (bySourceParent) return bySourceParent.id;
+
+  // 4. По code
+  const normalized = v.replace(/^0+/, "");
+  const byCode = accounts.find(
+    (a) => String(a.code || "").replace(/^0+/, "") === normalized,
+  );
   if (byCode) return byCode.id;
 
-  // 3. По id
+  // 5. По id
   const byId = accounts.find((a) => a.id === v);
   if (byId) return byId.id;
 
-  // 4. По name (точное)
-  const byName = accounts.find((a) => String(a.name || '').toLowerCase() === v.toLowerCase());
+  // 6. По name (точное)
+  const byName = accounts.find(
+    (a) => String(a.name || "").toLowerCase() === v.toLowerCase(),
+  );
   if (byName) return byName.id;
 
-  // 5. По name (частичное вхождение)
+  // 7. По name (частичное)
   const byNamePartial = accounts.find((a) =>
-    String(a.name || '').toLowerCase().includes(v.toLowerCase())
+    String(a.name || "")
+      .toLowerCase()
+      .includes(v.toLowerCase()),
   );
   if (byNamePartial) return byNamePartial.id;
 
@@ -87,7 +141,7 @@ export function suggestAccountId(
  */
 export function suggestCounterpartyId(
   value: string,
-  counterparties: any[]
+  counterparties: any[],
 ): string | null {
   if (!value) return null;
   const v = String(value).trim();
@@ -98,16 +152,20 @@ export function suggestCounterpartyId(
   if (byId) return byId.id;
 
   // 2. По inn
-  const byInn = counterparties.find((c) => String(c.inn || '').trim() === v);
+  const byInn = counterparties.find((c) => String(c.inn || "").trim() === v);
   if (byInn) return byInn.id;
 
   // 3. По name
-  const byName = counterparties.find((c) => String(c.name || '').toLowerCase() === v.toLowerCase());
+  const byName = counterparties.find(
+    (c) => String(c.name || "").toLowerCase() === v.toLowerCase(),
+  );
   if (byName) return byName.id;
 
   // 4. Частично
   const byPartial = counterparties.find((c) =>
-    String(c.name || '').toLowerCase().includes(v.toLowerCase())
+    String(c.name || "")
+      .toLowerCase()
+      .includes(v.toLowerCase()),
   );
   if (byPartial) return byPartial.id;
 
@@ -121,9 +179,9 @@ export function suggestType(value: string): string | null {
   if (!value) return null;
   const v = String(value).toLowerCase().trim();
 
-  if (/поступлен|доход|приход|income|in\b/.test(v)) return 'income';
-  if (/списан|расход|уход|оплат|expense|out\b/.test(v)) return 'expense';
-  if (/перемещ|перевод|transfer/.test(v)) return 'transfer';
+  if (/поступлен|доход|приход|income|in\b/.test(v)) return "income";
+  if (/списан|расход|уход|оплат|expense|out\b/.test(v)) return "expense";
+  if (/перемещ|перевод|transfer/.test(v)) return "transfer";
 
   return null;
 }
@@ -137,15 +195,20 @@ export function suggestValue(
   context: {
     accounts?: any[];
     counterparties?: any[];
-  }
+  },
 ): string | null {
-  if (field === 'debit_account_id' || field === 'credit_account_id' || field === 'debit_account' || field === 'credit_account') {
+  if (
+    field === "debit_account_id" ||
+    field === "credit_account_id" ||
+    field === "debit_account" ||
+    field === "credit_account"
+  ) {
     return suggestAccountId(value, context.accounts || []);
   }
-  if (field === 'counterparty_id' || field === 'counterparty') {
+  if (field === "counterparty_id" || field === "counterparty") {
     return suggestCounterpartyId(value, context.counterparties || []);
   }
-  if (field === 'type') {
+  if (field === "type") {
     return suggestType(value);
   }
   return null;
