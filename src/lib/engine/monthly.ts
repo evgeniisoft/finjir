@@ -39,7 +39,7 @@ export class MonthlyEngine {
     // Годовой taxCalc (для месячных периодов — единый расчёт)
     let annualTaxCalc: any = null;
     let annualTaxCalcYear: string = "";
-    if (company && periodType === "monthly") {
+    if (company) {
       annualTaxCalcYear = periodStart.substring(0, 4);
       const yearStart = `${annualTaxCalcYear}-01-01`;
       const yearEnd = `${annualTaxCalcYear}-12-31`;
