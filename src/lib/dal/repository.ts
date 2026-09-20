@@ -32,6 +32,9 @@ const ENTITY_TO_MODEL: Record<string, string> = {
   AuditLog: "auditLogEntry",
   ExchangeRates: "exchangeRate",
   JournalEntries: "journalEntry",
+  DataSources: "dataSource",
+  DataMappings: "dataMapping",
+  ImportLogs: "importLog",
 };
 
 const MODEL_TO_TABLE: Record<string, string> = {
@@ -45,6 +48,9 @@ const MODEL_TO_TABLE: Record<string, string> = {
   auditLogEntry: "audit_log",
   exchangeRate: "exchange_rates",
   journalEntry: "journal_entries",
+  dataSource: "data_sources",
+  dataMapping: "data_mappings",
+  importLog: "import_logs",
 };
 
 function getModel(entity: string): any {
