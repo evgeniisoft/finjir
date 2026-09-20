@@ -30,7 +30,16 @@ export function formatWeek(weekStr: string): string {
     return weekStr;
   }
 }
-
+/**
+ * Форматирование кварталов: "2026-Q1" → "1 кв. 26"
+ */
+export function formatQuarter(period: string): string {
+  // period = "2026-Q1" → "1 кв. 26"
+  const match = period.match(/^(\d{4})-Q(\d)$/);
+  if (!match) return period;
+  const [, year, q] = match;
+  return `${q} кв. ${year.substring(2)}`;
+}
 /**
  * Форматирование дня: "2026-01-09T21:00:00.000Z" → "09 янв 26"
  */
