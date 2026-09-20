@@ -11,6 +11,8 @@ export default function SettingsPage() {
   const [showAddConnection, setShowAddConnection] = useState(false);
   const [isLoadingTestData, setIsLoadingTestData] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
+  const [dbStatus, setDbStatus] = useState<any>(null);
+  const [dbStatusLoading, setDbStatusLoading] = useState(false);
 
   // Форма подключения
   const [connectionForm, setConnectionForm] = useState({
@@ -35,6 +37,9 @@ export default function SettingsPage() {
   useEffect(() => {
     loadData();
     loadActiveApiUrl();
+    if (activeSection === "database") {
+      loadDbStatus();
+    }
   }, [activeSection]);
 
   const loadData = async () => {
@@ -53,7 +58,18 @@ export default function SettingsPage() {
       setLoading(false);
     }
   };
-
+  const loadDbStatus = async () => {
+    try {
+      setDbStatusLoading(true);
+      const res = await fetch("/api/db-status");
+      const data = await res.json();
+      setDbStatus(data);
+    } catch (e) {
+      console.error("Ошибка загрузки статуса БД:", e);
+    } finally {
+      setDbStatusLoading(false);
+    }
+  };
   const loadActiveApiUrl = async () => {
     // Функция устарела — подключения хранятся в env (DATABASE_URL)
   };
@@ -241,312 +257,186 @@ export default function SettingsPage() {
         <div className="flex-1">
           {/* База данных */}
           {activeSection === "database" && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Подключения к базам данных
+            <div className="space-y-6">
+              {/* Активное подключение */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Активное подключение
                 </h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowAddConnection(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                  >
-                    + Добавить подключение
-                  </button>
-                  <button
-                    onClick={handleLoadTestData}
-                    disabled={isLoadingTestData}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-                  >
-                    {isLoadingTestData
-                      ? "Загрузка..."
-                      : "Загрузить тестовые данные"}
-                  </button>
-                </div>
-              </div>
 
-              {/* Форма добавления */}
-              {showAddConnection && (
-                <div className="mb-6 bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900 mb-4">
-                    Новое подключение
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Название
-                      </label>
-                      <input
-                        type="text"
-                        value={connectionForm.name}
-                        onChange={(e) =>
-                          setConnectionForm({
-                            ...connectionForm,
-                            name: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        placeholder="Основная база"
-                      />
+                {dbStatusLoading && !dbStatus ? (
+                  <div className="text-sm text-gray-500">Загрузка...</div>
+                ) : dbStatus?.active ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Название</span>
+                        <span className="text-sm font-medium text-gray-900">
+                          {dbStatus.active.name}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Статус</span>
+                        <span
+                          className={`text-sm font-medium ${dbStatus.active.connected ? "text-green-600" : "text-red-600"}`}
+                        >
+                          {dbStatus.active.connected ? "Подключено" : "Ошибка"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Тип</span>
+                        <span className="text-sm font-medium text-gray-900">
+                          {dbStatus.active.type || "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Хост</span>
+                        <span className="text-sm font-medium text-gray-900 font-mono">
+                          {dbStatus.active.host || "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">База</span>
+                        <span className="text-sm font-medium text-gray-900">
+                          {dbStatus.active.database || "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Регион</span>
+                        <span className="text-sm font-medium text-gray-900">
+                          {dbStatus.active.region || "—"}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Тип
-                      </label>
-                      <select
-                        value={connectionForm.type}
-                        onChange={(e) =>
-                          setConnectionForm({
-                            ...connectionForm,
-                            type: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      >
-                        <option value="google_sheets">Google Sheets</option>
-                        <option value="postgresql">PostgreSQL</option>
-                        <option value="mysql">MySQL</option>
-                        <option value="sqlite">SQLite</option>
-                      </select>
-                    </div>
-                    {connectionForm.type === "google_sheets" && (
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          URL API (Google Apps Script)
-                        </label>
-                        <input
-                          type="text"
-                          value={connectionForm.api_url}
-                          onChange={(e) =>
-                            setConnectionForm({
-                              ...connectionForm,
-                              api_url: e.target.value,
-                            })
-                          }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          placeholder="https://script.google.com/macros/s/.../exec"
-                        />
-                        <p className="text-xs text-gray-400 mt-1">
-                          URL из деплоя Google Apps Script (Web App). GAS уже
-                          связан с таблицей.
+
+                    {dbStatus.active.error && (
+                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-xs text-red-600 font-mono">
+                          {dbStatus.active.error}
                         </p>
                       </div>
                     )}
-                    {connectionForm.type !== "google_sheets" && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Хост
-                          </label>
-                          <input
-                            type="text"
-                            value={connectionForm.host}
-                            onChange={(e) =>
-                              setConnectionForm({
-                                ...connectionForm,
-                                host: e.target.value,
-                              })
-                            }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="localhost"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Порт
-                          </label>
-                          <input
-                            type="text"
-                            value={connectionForm.port}
-                            onChange={(e) =>
-                              setConnectionForm({
-                                ...connectionForm,
-                                port: e.target.value,
-                              })
-                            }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="5432"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            База данных
-                          </label>
-                          <input
-                            type="text"
-                            value={connectionForm.database_name}
-                            onChange={(e) =>
-                              setConnectionForm({
-                                ...connectionForm,
-                                database_name: e.target.value,
-                              })
-                            }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="finengine"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Пользователь
-                          </label>
-                          <input
-                            type="text"
-                            value={connectionForm.user}
-                            onChange={(e) =>
-                              setConnectionForm({
-                                ...connectionForm,
-                                user: e.target.value,
-                              })
-                            }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="admin"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Пароль
-                          </label>
-                          <input
-                            type="password"
-                            value={connectionForm.password}
-                            onChange={(e) =>
-                              setConnectionForm({
-                                ...connectionForm,
-                                password: e.target.value,
-                              })
-                            }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <div className="flex gap-3 mt-4">
-                    <button
-                      onClick={handleAddConnection}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                    >
-                      Сохранить
-                    </button>
-                    <button
-                      onClick={() => setShowAddConnection(false)}
-                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200"
-                    >
-                      Отмена
-                    </button>
-                  </div>
-                </div>
-              )}
 
-              {/* Список подключений */}
-              <div className="space-y-3">
-                {connections.length === 0 ? (
-                  <p className="text-gray-500 text-sm">Нет подключений</p>
-                ) : (
-                  connections.map((conn) => {
-                    const isActive =
-                      conn.is_active === "true" ||
-                      conn.is_active === true ||
-                      conn.is_active === "TRUE";
-
-                    return (
-                      <div
-                        key={conn.id}
-                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg"
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                      <span className="text-xs text-gray-400">
+                        Последняя проверка:{" "}
+                        {new Date(dbStatus.active.last_check).toLocaleString(
+                          "ru-RU",
+                        )}
+                      </span>
+                      <button
+                        onClick={loadDbStatus}
+                        disabled={dbStatusLoading}
+                        className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
                       >
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {conn.name}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            Тип: {conn.type}
-                          </p>
-                          {conn.type === "google_sheets" && (
-                            <p className="text-sm text-gray-500">
-                              API:{" "}
-                              {(() => {
-                                try {
-                                  const config = JSON.parse(
-                                    conn.config || "{}",
-                                  );
-                                  return config.api_url
-                                    ? config.api_url.substring(0, 50) + "..."
-                                    : "Не указан";
-                                } catch {
-                                  return "Не указан";
-                                }
-                              })()}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              isActive
-                                ? "bg-green-100 text-green-800"
-                                : "bg-gray-100 text-gray-600"
-                            }`}
-                          >
-                            {isActive ? "Активна" : "Неактивна"}
-                          </span>
-                          {!isActive && (
-                            <button
-                              onClick={async () => {
-                                try {
-                                  // Деактивируем все
-                                  for (const c of connections) {
-                                    if (
-                                      c.is_active === "true" ||
-                                      c.is_active === true ||
-                                      c.is_active === "TRUE"
-                                    ) {
-                                      await api.update(
-                                        "DatabaseConnections",
-                                        c.id,
-                                        { ...c, is_active: "false" },
-                                      );
-                                    }
-                                  }
-
-                                  // Активируем выбранное
-                                  await api.update(
-                                    "DatabaseConnections",
-                                    conn.id,
-                                    { ...conn, is_active: "true" },
-                                  );
-
-                                  // Устанавливаем URL API
-                                  try {
-                                    const config = JSON.parse(
-                                      conn.config || "{}",
-                                    );
-                                    if (config.api_url) {
-                                      console.log(
-                                        "URL API установлен:",
-                                        config.api_url,
-                                      );
-                                    }
-                                  } catch (e) {
-                                    console.error("Ошибка парсинга config:", e);
-                                  }
-
-                                  loadData();
-                                  alert("Подключение активировано");
-                                } catch (error) {
-                                  console.error("Ошибка активации:", error);
-                                  alert("Ошибка при активации");
-                                }
-                              }}
-                              className="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 cursor-pointer"
-                            >
-                              Сделать активной
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                        {dbStatusLoading
+                          ? "Проверка..."
+                          : "Проверить подключение"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">
+                    Не удалось получить статус
+                  </div>
                 )}
+              </div>
+
+              {/* Структура базы данных */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Структура базы данных
+                  </h3>
+                  <span className="text-sm text-gray-500">
+                    {dbStatus?.summary?.total_tables || 0} таблиц
+                  </span>
+                </div>
+
+                {dbStatus?.tables && dbStatus.tables.length > 0 ? (
+                  <>
+                    <table className="min-w-full">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="pb-2 text-left text-xs font-semibold text-gray-500 uppercase">
+                            Таблица
+                          </th>
+                          <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">
+                            Записей
+                          </th>
+                          <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">
+                            Полей
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dbStatus.tables.map((t: any) => (
+                          <tr
+                            key={t.name}
+                            className="border-b border-gray-50 last:border-0"
+                          >
+                            <td className="py-2 text-sm text-gray-900 font-mono">
+                              {t.name}
+                            </td>
+                            <td className="py-2 text-sm text-right text-gray-700">
+                              {t.rows.toLocaleString("ru-RU")}
+                            </td>
+                            <td className="py-2 text-sm text-right text-gray-500">
+                              {t.columns}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="border-t-2 border-gray-200">
+                          <td className="py-3 text-sm font-semibold text-gray-900">
+                            Итого
+                          </td>
+                          <td className="py-3 text-sm text-right font-semibold text-gray-900">
+                            {dbStatus.summary.total_rows.toLocaleString(
+                              "ru-RU",
+                            )}
+                          </td>
+                          <td className="py-3 text-sm text-right font-semibold text-gray-900">
+                            {dbStatus.summary.total_columns}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    <div className="flex justify-end pt-4 border-t border-gray-100 mt-4">
+                      <button
+                        onClick={loadDbStatus}
+                        disabled={dbStatusLoading}
+                        className="px-4 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
+                      >
+                        {dbStatusLoading ? "Обновление..." : "Обновить"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-500">
+                    Нет данных о структуре
+                  </div>
+                )}
+              </div>
+
+              {/* Другие подключения */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Другие подключения
+                  </h3>
+                  <button
+                    disabled
+                    title="Множественные подключения (SaaS-режим) — в разработке"
+                    className="px-4 py-1.5 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+                  >
+                    + Добавить
+                  </button>
+                </div>
+                <p className="text-sm text-gray-500">
+                  Подключений нет. Функция множественных подключений
+                  (SaaS-режим) находится в разработке.
+                </p>
               </div>
             </div>
           )}
