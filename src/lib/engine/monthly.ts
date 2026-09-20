@@ -433,7 +433,22 @@ export class MonthlyEngine {
       // Флаги для налогов
       const hasEmployees =
         Boolean(company?.has_employees) || (company?.monthly_payroll || 0) > 0;
-      const monthNum = parseInt(period.substring(5, 7));
+
+      // Определяем месяц для periodType
+      let monthNum = 0;
+      if (periodType === "monthly" || periodType === "daily") {
+        // "2026-09" → 9, "2026-09-15" → 9
+        monthNum = parseInt(period.substring(5, 7));
+      } else if (periodType === "quarterly") {
+        // "2026-Q1" → 3 (конец 1 квартала), "2026-Q2" → 6
+        const q = parseInt(period.split("-Q")[1]);
+        monthNum = q * 3;
+      } else if (periodType === "weekly") {
+        // "2026-W01" → берём месяц по первому дню недели
+        const periodStartDate = this.getPeriodStartDate(period, periodType);
+        monthNum = parseInt(periodStartDate.substring(5, 7));
+      }
+
       const isQuarterEnd =
         monthNum === 3 || monthNum === 6 || monthNum === 9 || monthNum === 12;
 
