@@ -511,9 +511,16 @@ export class MonthlyEngine {
       // Налоговые выбытия за период
       let taxOutflow = 0;
       if (taxCalc) {
+        const isIndividual =
+          Boolean(company?.is_individual) ||
+          String(company?.is_individual).toLowerCase() === "true";
+
         const vatPayment = isQuarterEnd ? taxCalc.vat_to_pay : 0;
         const incomeTaxPayment = isQuarterEnd ? taxCalc.income_tax_amount : 0;
-        const insurancePayment = hasEmployees ? taxCalc.insurance_amount : 0;
+
+        // Для ИП — фикс. взносы, для ООО — взносы с зарплаты
+        const insurancePayment =
+          hasEmployees || isIndividual ? taxCalc.insurance_amount : 0;
         const ndflPayment = hasEmployees ? taxCalc.ndfl_amount : 0;
 
         taxOutflow =
