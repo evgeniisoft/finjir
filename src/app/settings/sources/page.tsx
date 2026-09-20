@@ -30,6 +30,18 @@ export default function DataSourcesPage() {
   const [importResult, setImportResult] = useState<any>(null);
   const [importing, setImporting] = useState(false);
 
+  // Модалка удаления
+  const [deleteModal, setDeleteModal] = useState<{
+    source: any;
+    txCount: number;
+    mappingCount: number;
+    logCount: number;
+    deleteMappings: boolean;
+    deleteTransactions: boolean;
+    deleteLogs: boolean;
+    loading: boolean;
+  } | null>(null);
+
   const [sourceForm, setSourceForm] = useState({
     name: '',
     type: 'csv',
@@ -71,7 +83,6 @@ export default function DataSourcesPage() {
       setFileContent(content);
       setImportResult(null);
 
-      // Запрос preview + уникальные значения
       try {
         const res = await fetch('/api/import/preview', {
           method: 'POST',
@@ -88,7 +99,6 @@ export default function DataSourcesPage() {
         setUniqueValues(data.unique_values || {});
         setMappingFields(data.auto_mapping || {});
 
-        // Авто-маппинг значений на основе уникальных
         autoMapValues(data.auto_mapping || {}, data.unique_values || {});
       } catch (err) {
         console.error('Ошибка preview:', err);
@@ -106,11 +116,9 @@ export default function DataSourcesPage() {
     for (const [header, targetField] of Object.entries(mapping)) {
       if (!targetField) continue;
 
-      // Мапим значения только для account/counterparty/type
       const needsValueMapping = [
         'debit_account', 'credit_account',
-        'counterparty',
-        'type',
+        'counterparty', 'type',
       ].includes(targetField);
 
       if (!needsValueMapping) continue;
@@ -245,16 +253,92 @@ export default function DataSourcesPage() {
     }
   };
 
-  const handleDeleteSource = async (source: any, e: React.MouseEvent) => {
+  // ============================================
+  // ОТКРЫТИЕ МОДАЛКИ УДАЛЕНИЯ
+  // ============================================
+  const openDeleteModal = async (source: any, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`Удалить источник "${source.name}"?`)) return;
+
+    let txCount = 0;
+    let logCount = 0;
+    let mappingCount = 0;
+
     try {
-      const related = mappings.filter((m) => m.source_id === source.id);
-      for (const m of related) await api.delete('DataMappings', m.id);
-      await api.delete('DataSources', source.id);
-      if (selectedSource?.id === source.id) { setSelectedSource(null); setSelectedMapping(null); }
+      const [logs, allTx] = await Promise.all([
+        api.getAll('ImportLogs'),
+        api.getAll('Transactions'),
+      ]);
+
+      const sourceLogs = logs.filter((l: any) => l.source_id === source.id);
+      logCount = sourceLogs.length;
+
+      const batchIds = sourceLogs.map((l: any) => l.batch_id);
+      txCount = allTx.filter((t: any) =>
+        t.import_batch_id && batchIds.includes(t.import_batch_id)
+      ).length;
+
+      mappingCount = mappings.filter((m) => m.source_id === source.id).length;
+    } catch (err) {
+      console.error('Ошибка подсчёта:', err);
+    }
+
+    setDeleteModal({
+      source,
+      txCount,
+      logCount,
+      mappingCount,
+      deleteMappings: true,
+      deleteTransactions: false,
+      deleteLogs: false,
+      loading: false,
+    });
+  };
+
+  // ============================================
+  // ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ
+  // ============================================
+  const confirmDelete = async () => {
+    if (!deleteModal) return;
+
+    try {
+      setDeleteModal({ ...deleteModal, loading: true });
+
+      const res = await fetch('/api/import/delete-source', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_id: deleteModal.source.id,
+          delete_mappings: deleteModal.deleteMappings,
+          delete_transactions: deleteModal.deleteTransactions,
+          delete_logs: deleteModal.deleteLogs,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Ошибка удаления');
+      }
+
+      const parts: string[] = [];
+      if (data.deleted.transactions > 0) parts.push(`транзакций: ${data.deleted.transactions}`);
+      if (data.deleted.mappings > 0) parts.push(`маппингов: ${data.deleted.mappings}`);
+      if (data.deleted.logs > 0) parts.push(`логов: ${data.deleted.logs}`);
+      parts.push(`источник удалён`);
+
+      alert('Готово: ' + parts.join(', '));
+
+      if (selectedSource?.id === deleteModal.source.id) {
+        setSelectedSource(null);
+        setSelectedMapping(null);
+      }
+
+      setDeleteModal(null);
       await loadData();
-    } catch (err: any) { alert('Ошибка: ' + err.message); }
+    } catch (err: any) {
+      alert('Ошибка: ' + err.message);
+      setDeleteModal({ ...deleteModal, loading: false });
+    }
   };
 
   const handleRenameSource = async (source: any, e: React.MouseEvent) => {
@@ -267,18 +351,15 @@ export default function DataSourcesPage() {
     } catch (err: any) { alert('Ошибка: ' + err.message); }
   };
 
-  // Проверка готовности к импорту
   const targetFields = selectedSource ? getTargetFields(selectedSource.target_type) : [];
   const requiredFields = targetFields.filter((f) => f.required);
   const mappedTargetFields = Object.values(mappingFields).filter(Boolean);
   const missingRequired = requiredFields.filter((f) => !mappedTargetFields.includes(f.value));
 
-  // Какие колонки требуют маппинга значений
   const valueFieldsToMap = Object.entries(mappingFields)
     .filter(([, target]) => ['debit_account', 'credit_account', 'counterparty', 'type'].includes(target as string))
     .map(([header, target]) => ({ header, target: target as string }));
 
-  // Проверка готовности значений
   const valueMappingIssues = valueFieldsToMap.map(({ header, target }) => {
     const values = uniqueValues[header] || [];
     const mapped = valueMappings[target] || {};
@@ -355,7 +436,7 @@ export default function DataSourcesPage() {
                   </div>
                   <div className="flex gap-3">
                     <button onClick={(e) => handleRenameSource(s, e)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Изменить</button>
-                    <button onClick={(e) => handleDeleteSource(s, e)} className="text-red-600 hover:text-red-800 text-sm font-medium">Удалить</button>
+                    <button onClick={(e) => openDeleteModal(s, e)} className="text-red-600 hover:text-red-800 text-sm font-medium">Удалить</button>
                   </div>
                 </div>
               </div>
@@ -367,14 +448,12 @@ export default function DataSourcesPage() {
       {/* Работа с источником */}
       {selectedSource && (
         <div className="space-y-6">
-          {/* 1. Файл */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
             <h3 className="text-lg font-semibold mb-4">1. Загрузка файла</h3>
             <input type="file" accept=".csv,.txt" onChange={handleFileUpload} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            {fileName && <p className="text-sm text-gray-500 mt-2">Загружен: {fileName} · {fileRows.length > 0 ? 'строк: ' + (fileRows.length === 5 ? '≥5' : fileRows.length) : ''}</p>}
+            {fileName && <p className="text-sm text-gray-500 mt-2">Загружен: {fileName}</p>}
           </div>
 
-          {/* 2. Маппинг полей */}
           {fileHeaders.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
@@ -386,7 +465,6 @@ export default function DataSourcesPage() {
                 {fileHeaders.map((h) => {
                   const suggested = suggestTargetField(h, targetFields.map((f) => f.value)) || '';
                   const current = mappingFields[h] || '';
-                  const isRequiredMapped = current && targetFields.find((f) => f.value === current)?.required;
                   const isMissing = !current && targetFields.some((f) => f.required);
 
                   return (
@@ -422,12 +500,11 @@ export default function DataSourcesPage() {
             </div>
           )}
 
-          {/* 3. Маппинг значений */}
           {valueFieldsToMap.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <div className="mb-4">
                 <h3 className="text-lg font-semibold">3. Маппинг значений</h3>
-                <p className="text-sm text-gray-500 mt-1">Система нашла значения в файле, которые нужно преобразовать в наши ID. Большинство уже сопоставлено автоматически.</p>
+                <p className="text-sm text-gray-500 mt-1">Система нашла значения в файле, которые нужно преобразовать в наши ID.</p>
               </div>
 
               {valueFieldsToMap.map(({ header, target }) => {
@@ -496,7 +573,6 @@ export default function DataSourcesPage() {
             </div>
           )}
 
-          {/* 4. Проверка и импорт */}
           {fileHeaders.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <h3 className="text-lg font-semibold mb-4">4. Проверка и импорт</h3>
@@ -542,13 +618,124 @@ export default function DataSourcesPage() {
                   {importing ? 'Импорт...' : 'Импортировать'}
                 </button>
               </div>
-              {hasBlockingIssues && (
-                <p className="text-xs text-red-600 mt-2">
-                  Исправьте проблемы перед импортом
-                </p>
-              )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ============================================ */}
+      {/* МОДАЛЬНОЕ ОКНО УДАЛЕНИЯ */}
+      {/* ============================================ */}
+      {deleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Удалить источник "{deleteModal.source.name}"?
+              </h3>
+            </div>
+
+            <div className="p-6">
+              {/* Информация о связанных данных */}
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  С этим источником связано:
+                </p>
+                <ul className="space-y-1 text-sm text-gray-600">
+                  <li>• <strong>{deleteModal.txCount}</strong> транзакций (импортированы ранее)</li>
+                  <li>• <strong>{deleteModal.mappingCount}</strong> маппингов полей</li>
+                  <li>• <strong>{deleteModal.logCount}</strong> записей в истории импорта</li>
+                </ul>
+              </div>
+
+              {/* Чекбоксы */}
+              <div className="space-y-3 mb-4">
+                <p className="text-sm font-medium text-gray-700">Что удалить:</p>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deleteModal.deleteMappings}
+                    onChange={(e) => setDeleteModal({ ...deleteModal, deleteMappings: e.target.checked })}
+                    className="mt-1"
+                  />
+                  <div>
+                    <span className="text-sm text-gray-900">
+                      Маппинги ({deleteModal.mappingCount})
+                    </span>
+                    <p className="text-xs text-gray-500">Рекомендуется. Без источника маппинги бесполезны.</p>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deleteModal.deleteTransactions}
+                    onChange={(e) => setDeleteModal({ ...deleteModal, deleteTransactions: e.target.checked })}
+                    className="mt-1"
+                  />
+                  <div>
+                    <span className="text-sm text-gray-900">
+                      Транзакции ({deleteModal.txCount})
+                    </span>
+                    <p className="text-xs text-gray-500">Удалить импортированные данные. Необратимо.</p>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deleteModal.deleteLogs}
+                    onChange={(e) => setDeleteModal({ ...deleteModal, deleteLogs: e.target.checked })}
+                    className="mt-1"
+                  />
+                  <div>
+                    <span className="text-sm text-gray-900">
+                      История импортов ({deleteModal.logCount})
+                    </span>
+                    <p className="text-xs text-gray-500">Рекомендуется оставить для аудита.</p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Warning */}
+              {deleteModal.deleteTransactions && deleteModal.txCount > 0 && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+                  <p className="text-sm text-red-700 font-medium">
+                    ⚠ Внимание: удаление транзакций необратимо.
+                  </p>
+                  <p className="text-xs text-red-600 mt-1">
+                    Все {deleteModal.txCount} записей будут удалены из базы данных.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteModal(null)}
+                disabled={deleteModal.loading}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleteModal.loading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 ${
+                  deleteModal.deleteTransactions && deleteModal.txCount > 0
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'bg-orange-600 text-white hover:bg-orange-700'
+                }`}
+              >
+                {deleteModal.loading
+                  ? 'Удаление...'
+                  : deleteModal.deleteTransactions && deleteModal.txCount > 0
+                    ? 'Удалить всё (необратимо)'
+                    : 'Удалить источник'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
