@@ -18,6 +18,7 @@ export type SheetName =
   | 'Notifications'
   | 'DataSources'
   | 'DataMappings';
+  | 'ImportLogs';
 
 class ApiClient {
   private baseUrl = '/api/data';
