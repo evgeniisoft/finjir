@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { formatMonth, formatWeek, formatDay } from "@/lib/utils/dateFormat";
+import {
+  formatMonth,
+  formatWeek,
+  formatDay,
+  formatQuarter,
+} from "@/lib/utils/dateFormat";
 import {
   getPeriodRange,
   getLastMonthRange,
@@ -1108,7 +1113,7 @@ function MonthlyTableView({
     if (periodType === "monthly") return formatMonth(raw);
     if (periodType === "weekly") return formatWeek(raw);
     if (periodType === "daily") return formatDay(raw);
-    if (periodType === "quarterly") return raw;
+    if (periodType === "quarterly") return formatQuarter(raw);
     return raw;
   });
 
