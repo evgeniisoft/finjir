@@ -407,7 +407,27 @@ export default function ReportsPage() {
           activeTab === "balance") && (
           <div className="ml-auto flex gap-2">
             <button
-              onClick={() => setShowPeriods(!showPeriods)}
+              onClick={() => {
+                const nextShowPeriods = !showPeriods;
+                setShowPeriods(nextShowPeriods);
+
+                // При включении «по периодам» — если период < 3 месяцев — расширяем до года
+                if (nextShowPeriods) {
+                  const startMs = new Date(period.start).getTime();
+                  const endMs = new Date(period.end).getTime();
+                  const daysDiff = Math.round(
+                    (endMs - startMs) / (1000 * 60 * 60 * 24),
+                  );
+
+                  if (daysDiff < 90) {
+                    const year = new Date(period.start).getFullYear();
+                    setPeriod({
+                      start: `${year}-01-01`,
+                      end: `${year}-12-31`,
+                    });
+                  }
+                }
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium ${showPeriods ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}
             >
               {showPeriods ? "Скрыть по периодам" : "По периодам"}
