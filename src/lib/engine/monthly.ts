@@ -183,21 +183,26 @@ export class MonthlyEngine {
         const monthNum = m;
         const isQuarterEndBefore =
           monthNum === 3 || monthNum === 6 || monthNum === 9 || monthNum === 12;
-        const hasEmployeesBefore =
-          String(company?.has_employees).toLowerCase() === "true" ||
-          (company?.monthly_payroll || 0) > 0;
+        const isIndividualBefore =
+          Boolean(company?.is_individual) ||
+          String(company?.is_individual).toLowerCase() === "true";
 
         const vatPayment = isQuarterEndBefore ? taxCalcBefore.vat_to_pay : 0;
         const incomeTaxPayment = isQuarterEndBefore
           ? taxCalcBefore.income_tax_amount
           : 0;
-        const insurancePayment = hasEmployeesBefore
-          ? taxCalcBefore.insurance_amount
+        const insurancePayment = taxCalcBefore.insurance_amount || 0;
+        const ndflPayment = taxCalcBefore.ndfl_amount || 0;
+        const ipFixedPayment = isIndividualBefore
+          ? taxCalcBefore.ip_fixed_amount || 0
           : 0;
-        const ndflPayment = hasEmployeesBefore ? taxCalcBefore.ndfl_amount : 0;
 
         runningBalance -=
-          insurancePayment + ndflPayment + vatPayment + incomeTaxPayment;
+          insurancePayment +
+          ndflPayment +
+          vatPayment +
+          incomeTaxPayment +
+          ipFixedPayment;
       }
     }
 
@@ -230,15 +235,14 @@ export class MonthlyEngine {
           annualTaxCalc &&
           periodStart.startsWith(annualTaxCalcYear)
         ) {
-          taxCalc = {
-            ...annualTaxCalc,
-            // НЕ делим revenue/expenses — они реальные за месяц
-            // Делим только налоги
-            vat_to_pay: annualTaxCalc.vat_to_pay / 12,
-            income_tax_amount: annualTaxCalc.income_tax_amount / 12,
-            insurance_amount: annualTaxCalc.insurance_amount / 12,
-            ndfl_amount: annualTaxCalc.ndfl_amount / 12,
-          };
+          // Пересчитываем налоги от фактической зарплаты месяца
+          taxCalc = taxEngine.calculateTax(
+            company,
+            transactions,
+            accounts,
+            periodStartDate,
+            periodEndDate,
+          );
         } else {
           taxCalc = taxEngine.calculateTax(
             company,
@@ -322,13 +326,20 @@ export class MonthlyEngine {
           accounts,
         );
 
-        // Добавляем задолженность по налогам как обязательство (только если были операции)
+        // Добавляем задолженность по налогам как обязательство
         if (annualTaxCalc) {
+          const isIndividual =
+            Boolean(company?.is_individual) ||
+            String(company?.is_individual).toLowerCase() === "true";
+
+          const ipFixed = isIndividual ? annualTaxCalc.ip_fixed_amount || 0 : 0;
+
           const taxLiability =
             annualTaxCalc.income_tax_amount +
             annualTaxCalc.insurance_amount +
             annualTaxCalc.ndfl_amount +
-            annualTaxCalc.vat_to_pay;
+            annualTaxCalc.vat_to_pay +
+            ipFixed;
           totalLiabilities += taxLiability;
           details["acc-tax-liability"] = taxLiability;
         }
@@ -456,18 +467,26 @@ export class MonthlyEngine {
       if (taxCalc) {
         // ===== P&L: начисление каждый месяц =====
         if (reportType === "pnl") {
-          details["acc-tax-insurance"] = taxCalc.insurance_amount;
-          details["acc-tax-ndfl"] = taxCalc.ndfl_amount;
+          const isIndividual =
+            Boolean(company?.is_individual) ||
+            String(company?.is_individual).toLowerCase() === "true";
+
+          details["acc-tax-insurance"] = taxCalc.insurance_amount || 0;
+          details["acc-tax-ndfl"] = taxCalc.ndfl_amount || 0;
+
+          // Фикс. взносы ИП
+          if (isIndividual && taxCalc.ip_fixed_amount) {
+            details["acc-tax-ip"] = taxCalc.ip_fixed_amount;
+          }
 
           if (
             company?.tax_system === "USN_6" ||
             company?.tax_system === "USN_15"
           ) {
-            details["acc-tax-vat"] = 0; // УСН без НДС (в тесте)
+            details["acc-tax-vat"] = 0;
             details["acc-tax-usn"] = taxCalc.income_tax_amount;
             details["acc-tax-profit"] = 0;
           } else if (company?.tax_system === "OSNO") {
-            // Для ОСНО НДС не вычитается из прибыли — не показываем в P&L
             details["acc-tax-vat"] = 0;
             details["acc-tax-usn"] = 0;
             details["acc-tax-profit"] = taxCalc.income_tax_amount;
@@ -476,8 +495,17 @@ export class MonthlyEngine {
 
         // ===== Cash Flow: уплата по факту (квартальные только в конце квартала) =====
         if (reportType === "cashflow") {
+          const isIndividual =
+            Boolean(company?.is_individual) ||
+            String(company?.is_individual).toLowerCase() === "true";
+
           details["acc-tax-insurance"] = taxCalc.insurance_amount;
           details["acc-tax-ndfl"] = taxCalc.ndfl_amount;
+
+          // Фикс. взносы ИП — из фактических транзакций acc-tax-ip
+          if (isIndividual && taxCalc.ip_fixed_amount) {
+            details["acc-tax-ip"] = taxCalc.ip_fixed_amount;
+          }
 
           if (isQuarterEnd) {
             details["acc-tax-vat"] = taxCalc.vat_to_pay;
@@ -499,12 +527,14 @@ export class MonthlyEngine {
           }
 
           // Детализация налоговых выбытий
-          details["tax_insurance"] = hasEmployees
-            ? taxCalc.insurance_amount
-            : 0;
-          details["tax_ndfl"] = hasEmployees ? taxCalc.ndfl_amount : 0;
+          details["tax_insurance"] = taxCalc.insurance_amount || 0;
+          details["tax_ndfl"] = taxCalc.ndfl_amount || 0;
           details["tax_vat"] = isQuarterEnd ? taxCalc.vat_to_pay : 0;
           details["tax_income"] = isQuarterEnd ? taxCalc.income_tax_amount : 0;
+
+          if (isIndividual && taxCalc.ip_fixed_amount) {
+            details["tax_ip"] = taxCalc.ip_fixed_amount;
+          }
         }
       }
 
@@ -517,25 +547,34 @@ export class MonthlyEngine {
 
         const vatPayment = isQuarterEnd ? taxCalc.vat_to_pay : 0;
         const incomeTaxPayment = isQuarterEnd ? taxCalc.income_tax_amount : 0;
-
-        // Для ИП — фикс. взносы, для ООО — взносы с зарплаты
-        const insurancePayment =
-          hasEmployees || isIndividual ? taxCalc.insurance_amount : 0;
-        const ndflPayment = hasEmployees ? taxCalc.ndfl_amount : 0;
+        const insurancePayment = taxCalc.insurance_amount || 0;
+        const ndflPayment = taxCalc.ndfl_amount || 0;
+        const ipFixedPayment = isIndividual ? taxCalc.ip_fixed_amount || 0 : 0;
 
         taxOutflow =
-          insurancePayment + ndflPayment + vatPayment + incomeTaxPayment;
+          insurancePayment +
+          ndflPayment +
+          vatPayment +
+          incomeTaxPayment +
+          ipFixedPayment;
       }
 
       // Прибыль с учётом налогов
       let profit = revenue - expenses;
       if (taxCalc && reportType === "pnl") {
+        const isIndividual =
+          Boolean(company?.is_individual) ||
+          String(company?.is_individual).toLowerCase() === "true";
+
+        const ipFixed = isIndividual ? taxCalc.ip_fixed_amount || 0 : 0;
+
         profit =
           revenue -
           expenses -
           taxCalc.income_tax_amount -
           taxCalc.insurance_amount -
-          taxCalc.ndfl_amount;
+          taxCalc.ndfl_amount -
+          ipFixed;
       }
 
       const startingBalanceForPeriod = runningBalance;
