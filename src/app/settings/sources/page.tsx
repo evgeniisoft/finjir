@@ -151,6 +151,15 @@ export default function DataSourcesPage() {
         record_type: "fact",
       });
       await loadData();
+
+      // Перезагружаем маппинг, чтобы кнопка «Импортировать» стала активной
+      const allMappings = await api.getAll("DataMappings");
+      const savedMapping = allMappings.find(
+        (m) => m.source_id === selectedSource.id,
+      );
+      setSelectedMapping(savedMapping || null);
+
+      alert("Маппинг сохранён");
     } catch (e: any) {
       alert("Ошибка: " + e.message);
     }
@@ -252,8 +261,19 @@ export default function DataSourcesPage() {
   };
 
   const handleImport = async () => {
-    if (!selectedSource || !selectedMapping) {
-      alert("Выберите источник и маппинг");
+    if (!selectedSource) {
+      alert("Выберите источник");
+      return;
+    }
+
+    // Если маппинг не выбран — ищем в mappings
+    let mapping = selectedMapping;
+    if (!mapping) {
+      mapping = mappings.find((m) => m.source_id === selectedSource.id);
+      if (mapping) setSelectedMapping(mapping);
+    }
+    if (!mapping) {
+      alert("Сначала сохраните маппинг");
       return;
     }
     if (!fileContent) {
@@ -268,7 +288,7 @@ export default function DataSourcesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source_id: selectedSource.id,
-          mapping_id: selectedMapping.id,
+          mapping_id: mapping.id,
           file_content: fileContent,
           file_name: fileName,
           company_id: sourceForm.company_id || selectedSource.company_id,
@@ -578,7 +598,7 @@ export default function DataSourcesPage() {
                 </button>
                 <button
                   onClick={handleImport}
-                  disabled={importing || !selectedMapping}
+                  disabled={importing}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
                 >
                   {importing ? "Импорт..." : "Импортировать"}
