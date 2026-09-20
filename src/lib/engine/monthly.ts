@@ -326,20 +326,33 @@ export class MonthlyEngine {
           accounts,
         );
 
-        // Добавляем задолженность по налогам как обязательство
-        if (annualTaxCalc) {
+        // Задолженность по налогам — накопительно с начала года
+        if (company) {
+          const yearStart = `${new Date(periodEndDate).getFullYear()}-01-01`;
+
+          const cumulativeTaxCalc = taxEngine.calculateTax(
+            company,
+            transactions,
+            accounts,
+            yearStart,
+            periodEndDate,
+          );
+
           const isIndividual =
             Boolean(company?.is_individual) ||
             String(company?.is_individual).toLowerCase() === "true";
 
-          const ipFixed = isIndividual ? annualTaxCalc.ip_fixed_amount || 0 : 0;
+          const ipFixed = isIndividual
+            ? cumulativeTaxCalc.ip_fixed_amount || 0
+            : 0;
 
           const taxLiability =
-            annualTaxCalc.income_tax_amount +
-            annualTaxCalc.insurance_amount +
-            annualTaxCalc.ndfl_amount +
-            annualTaxCalc.vat_to_pay +
+            cumulativeTaxCalc.income_tax_amount +
+            cumulativeTaxCalc.insurance_amount +
+            cumulativeTaxCalc.ndfl_amount +
+            cumulativeTaxCalc.vat_to_pay +
             ipFixed;
+
           totalLiabilities += taxLiability;
           details["acc-tax-liability"] = taxLiability;
         }
