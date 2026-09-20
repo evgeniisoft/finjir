@@ -213,19 +213,20 @@ model DataSource {
 }
 
 model DataMapping {
-  id          String   @id @default(uuid())
-  tenant_id   String?  @default("tenant-1")
-  source_id   String
-  name        String
-  target_type String
-  mappings    String
-  defaults    String?
-  transforms  String?
-  dedup_key   String?
-  is_deleted  String?  @default("")
-  deleted_at  DateTime?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id             String   @id @default(uuid())
+  tenant_id      String?  @default("tenant-1")
+  source_id      String
+  name           String
+  target_type    String
+  mappings       String
+  defaults       String?
+  transforms     String?
+  value_mappings String?
+  dedup_key      String?
+  is_deleted     String?  @default("")
+  deleted_at     DateTime?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
 
   @@map("data_mappings")
 }
