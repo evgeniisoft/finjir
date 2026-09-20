@@ -2,14 +2,10 @@
  * ============================================
  * FinEngine 2026 - Налоговый движок
  * ============================================
- * Актуальные ставки 2026 года:
- * - НДС ОСНО: 22% (базовая), 10% (льготная)
- * - НДС УСН: 0% (до 20 млн), 5% (20-250 млн), 7% (250-490.5 млн)
- * - Налог на прибыль ОСНО: 25%
- * - УСН 6%: Доходы × 6%
- * - УСН 15%: (Доходы - Расходы) × 15%
- * - Страховые взносы: 30% (до лимита), 15.1% (свыше)
- * - НДФЛ: 13% (до 5 млн), 15% (свыше)
+ * Налоги считаются из ФАКТИЧЕСКИХ транзакций.
+ * - Зарплата → acc-out-salary / acc-out-bonus
+ * - Страховые / НДФЛ → % от фактической зарплаты
+ * - Фикс. взносы ИП → acc-tax-ip
  */
 
 import { Company, Transaction, Account, Budget } from './types';
@@ -21,8 +17,8 @@ export interface TaxCalculation {
   tax_system: string;
 
   // Выручка
-  revenue_with_vat: number;        // Выручка с НДС (как в операциях)
-  revenue_without_vat: number;     // Выручка без НДС (для расчёта прибыли)
+  revenue_with_vat: number;
+  revenue_without_vat: number;
   expenses_without_vat: number;
   profit_before_tax: number;
 
@@ -40,14 +36,16 @@ export interface TaxCalculation {
   // Страховые взносы
   insurance_rate: number;
   insurance_amount: number;
+  actual_payroll: number;   // фактическая зарплата за период
+  ip_fixed_amount: number;  // фикс. взносы ИП за период
 
   // НДФЛ
   ndfl_amount: number;
   total_payroll_cost: number;
 
   // Итоги
-  total_tax: number;               // Налог + Взносы (без НДС)
-  total_tax_with_vat: number;      // С НДС
+  total_tax: number;
+  total_tax_with_vat: number;
   effective_tax_rate: number;
 }
 
@@ -77,13 +75,14 @@ export class TaxEngine {
     // Доля периода в году
     const periodFraction = this.getPeriodFraction(periodStart, periodEnd);
 
-    // Определяем параметры НДС
+    // ============================================
+    // НДС
+    // ============================================
     const vatIncluded = String(company.vat_included).toLowerCase() === 'true';
     const vatRate = vatIncluded
       ? parseFloat(String(company.vat_rate || this.settings['vat_osno'] || '0.22'))
       : 0;
 
-    // Выручка (как в операциях)
     const revenueWithVAT = companyTx
       .filter(t => {
         const creditAccount = accounts.find(a => a.id === t.credit_account_id);
@@ -91,7 +90,6 @@ export class TaxEngine {
       })
       .reduce((sum, t) => sum + parseFloat(String(t.amount || 0)), 0);
 
-    // Выручка без НДС
     let revenueWithoutVAT = revenueWithVAT;
     let outgoingVAT = 0;
 
@@ -100,7 +98,6 @@ export class TaxEngine {
       outgoingVAT = revenueWithVAT - revenueWithoutVAT;
     }
 
-    // Расходы (с НДС, если применимо)
     const expensesWithVAT = companyTx
       .filter(t => {
         const debitAccount = accounts.find(a => a.id === t.debit_account_id);
@@ -108,7 +105,6 @@ export class TaxEngine {
       })
       .reduce((sum, t) => sum + parseFloat(String(t.amount || 0)), 0);
 
-    // Расходы без НДС
     let expensesWithoutVAT = expensesWithVAT;
     let incomingVATFromExpenses = 0;
 
@@ -119,35 +115,31 @@ export class TaxEngine {
 
     const profit = revenueWithoutVAT - expensesWithoutVAT;
 
-    // Входящий НДС (из явных полей и из расходов)
     const explicitIncomingVAT = companyTx
       .filter(t => t.vat_direction === 'incoming')
       .reduce((sum, t) => sum + parseFloat(String(t.vat_amount || 0)), 0);
 
     const totalIncomingVAT = Math.max(incomingVATFromExpenses, explicitIncomingVAT);
-
     const vatToPay = Math.max(0, outgoingVAT - totalIncomingVAT);
 
+    // ============================================
     // Налог на прибыль / УСН
+    // ============================================
     let incomeTaxRate = 0;
     let incomeTaxAmount = 0;
 
-    // Годовая база (для месячных периодов)
-    const isMonthlyPeriod = periodFraction < 1;
-    const annualRevenueBase = isMonthlyPeriod ? revenueWithoutVAT / periodFraction : revenueWithoutVAT;
-    const annualExpensesBase = isMonthlyPeriod ? expensesWithoutVAT / periodFraction : expensesWithoutVAT;
-    const annualProfitBase = isMonthlyPeriod ? profit / periodFraction : profit;
+    const isPeriodPartOfYear = periodFraction < 1;
+    const annualRevenueBase = isPeriodPartOfYear ? revenueWithoutVAT / periodFraction : revenueWithoutVAT;
+    const annualProfitBase = isPeriodPartOfYear ? profit / periodFraction : profit;
 
     switch (company.tax_system) {
-      case 'USN_6':
+      case 'USN_6': {
         incomeTaxRate = parseFloat(this.settings['usn_6'] || '0.06');
-        // Годовой налог = годовая выручка × 6%
         const annualIncomeTax = annualRevenueBase * incomeTaxRate;
-        // Для периода — пропорционально
-        incomeTaxAmount = isMonthlyPeriod ? annualIncomeTax * periodFraction : annualIncomeTax;
+        incomeTaxAmount = isPeriodPartOfYear ? annualIncomeTax * periodFraction : annualIncomeTax;
         break;
-
-      case 'USN_15':
+      }
+      case 'USN_15': {
         incomeTaxRate = parseFloat(this.settings['usn_15'] || '0.15');
         const annualRev15 = revenueWithoutVAT / periodFraction;
         const annualExp15 = expensesWithoutVAT / periodFraction;
@@ -157,39 +149,55 @@ export class TaxEngine {
         if (annualIncomeTax15 < annualMinimumTax15) annualIncomeTax15 = annualMinimumTax15;
         incomeTaxAmount = annualIncomeTax15 * periodFraction;
         break;
-
-      case 'OSNO':
+      }
+      case 'OSNO': {
         incomeTaxRate = parseFloat(this.settings['profit_tax'] || '0.25');
         const annualProfitOsno = profit / periodFraction;
         const annualIncomeTaxOsno = Math.max(0, annualProfitOsno) * incomeTaxRate;
         incomeTaxAmount = annualIncomeTaxOsno * periodFraction;
         break;
-    }
-
-    // Страховые взносы и НДФЛ
-    const annualRevenue = revenueWithoutVAT / periodFraction;
-    const insurance = this.calculateInsuranceContributions(company, annualRevenue);
-
-    let insuranceAmount: number;
-    if (company.is_individual) {
-      // ИП: фиксированный взнос — раз в год (в декабре)
-      const monthNum = parseInt(periodEnd.substring(5, 7));
-      if (monthNum === 12 || periodFraction === 1) {
-        insuranceAmount = insurance.annual_contributions; // Полная сумма
-      } else {
-        insuranceAmount = 0; // Не платит в другие месяцы
       }
-    } else {
-      // ООО: взносы ежемесячно
-      insuranceAmount = insurance.annual_contributions * periodFraction;
     }
 
-    const ndflAmount = company.has_employees || company.monthly_payroll > 0
-      ? (insurance.ndfl_annual || 0) * periodFraction
-      : 0;
-    const totalPayrollCost = (insurance.total_payroll_cost || 0) * periodFraction;
+    // ============================================
+    // Зарплата: ФАКТ из транзакций
+    // ============================================
+    const payrollAccounts = (this.settings['payroll_accounts'] || 'acc-out-salary,acc-out-bonus')
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean);
 
+    const payrollTx = companyTx.filter(t =>
+      payrollAccounts.includes(t.debit_account_id)
+    );
+    const actualPayroll = payrollTx.reduce((s, t) => s + parseFloat(String(t.amount || 0)), 0);
+
+    // ============================================
+    // Фикс. взносы ИП: ФАКТ из транзакций acc-tax-ip
+    // ============================================
+    const ipFixedTx = companyTx.filter(t => t.debit_account_id === 'acc-tax-ip');
+    const ipFixedAmount = ipFixedTx.reduce((s, t) => s + parseFloat(String(t.amount || 0)), 0);
+
+    // ============================================
+    // Страховые взносы: % от фактической зарплаты
+    // ============================================
+    const insurance = this.calculateInsuranceFromPayroll(company, actualPayroll, periodFraction);
+
+    // Для ИП: фикс. взносы + страховые с зарплаты (если есть сотрудники)
+    const insuranceAmount = company.is_individual
+      ? ipFixedAmount + insurance.contributions
+      : insurance.contributions;
+
+    // ============================================
+    // НДФЛ: % от фактической зарплаты
+    // ============================================
+    const ndflAmount = insurance.ndfl;
+
+    const totalPayrollCost = actualPayroll + insuranceAmount + ndflAmount;
+
+    // ============================================
     // Уменьшение УСН на взносы
+    // ============================================
     let finalIncomeTax = incomeTaxAmount;
     if (company.tax_system === 'USN_6') {
       const isIndividual = Boolean(company.is_individual);
@@ -197,8 +205,10 @@ export class TaxEngine {
       finalIncomeTax = Math.max(incomeTaxAmount - Math.min(insuranceAmount, maxReduction), 0);
     }
 
-    // Итоговые налоги (без НДС)
-    const totalTax = finalIncomeTax + insuranceAmount;
+    // ============================================
+    // Итоги
+    // ============================================
+    const totalTax = finalIncomeTax + insuranceAmount + ndflAmount;
     const totalTaxWithVAT = totalTax + vatToPay;
 
     return {
@@ -218,6 +228,8 @@ export class TaxEngine {
       income_tax_amount: Math.round(finalIncomeTax * 100) / 100,
       insurance_rate: insurance.rate,
       insurance_amount: Math.round(insuranceAmount * 100) / 100,
+      actual_payroll: Math.round(actualPayroll * 100) / 100,
+      ip_fixed_amount: Math.round(ipFixedAmount * 100) / 100,
       ndfl_amount: Math.round(ndflAmount * 100) / 100,
       total_payroll_cost: Math.round(totalPayrollCost * 100) / 100,
       total_tax: Math.round(totalTax * 100) / 100,
@@ -227,8 +239,87 @@ export class TaxEngine {
   }
 
   /**
-   * Налоговый календарь на год (помесячно)
-   * Принимает budgetMonths — реальные месяцы горизонта планирования
+   * Страховые взносы и НДФЛ от ФАКТИЧЕСКОЙ зарплаты за период.
+   * Для периодов < год — базовая ставка без лимита (упрощённо).
+   */
+  calculateInsuranceFromPayroll(
+    company: Company,
+    actualPayroll: number,
+    periodFraction: number
+  ): {
+    contributions: number;
+    ndfl: number;
+    rate: number;
+  } {
+    if (actualPayroll <= 0) {
+      return { contributions: 0, ndfl: 0, rate: 0 };
+    }
+
+    let contributions = 0;
+    let rate = 0;
+
+    if (company.industry_type === 'it') {
+      rate = parseFloat(this.settings['insurance_it_rate'] || '0.076');
+      contributions = actualPayroll * rate;
+    } else if (company.industry_type === 'msp_priority') {
+      const mrot = parseFloat(this.settings['mrot'] || '27093');
+      const mspRate = parseFloat(this.settings['insurance_msp_rate'] || '0.15');
+      const baseRate = parseFloat(this.settings['insurance_base_rate'] || '0.30');
+      const threshold = mrot * 1.5;
+      const periodMonths = Math.max(1, Math.round(periodFraction * 12));
+      const monthlyPayroll = actualPayroll / periodMonths;
+      const monthlyBase = Math.min(monthlyPayroll, threshold);
+      const excess = Math.max(0, monthlyPayroll - threshold);
+      rate = mspRate;
+      contributions = (monthlyBase * baseRate + excess * mspRate) * periodMonths;
+    } else {
+      // Упрощённо для периода < год — базовая ставка без лимита
+      const limit = parseFloat(this.settings['insurance_limit'] || '2979000');
+      const baseRate = parseFloat(this.settings['insurance_base_rate'] || '0.30');
+      const reducedRate = parseFloat(this.settings['insurance_reduced_rate'] || '0.151');
+
+      // Для года — с лимитом
+      if (periodFraction >= 0.99) {
+        if (actualPayroll <= limit) {
+          contributions = actualPayroll * baseRate;
+          rate = baseRate;
+        } else {
+          contributions = limit * baseRate + (actualPayroll - limit) * reducedRate;
+          rate = reducedRate;
+        }
+      } else {
+        // Для периода < год — без лимита (упрощённо)
+        contributions = actualPayroll * baseRate;
+        rate = baseRate;
+      }
+    }
+
+    // НДФЛ
+    const ndflLimit = parseFloat(this.settings['ndfl_limit'] || '5000000');
+    const ndflBaseRate = parseFloat(this.settings['ndfl_base_rate'] || '0.13');
+    const ndflIncreasedRate = parseFloat(this.settings['ndfl_increased_rate'] || '0.15');
+
+    let ndfl = 0;
+    if (periodFraction >= 0.99) {
+      if (actualPayroll <= ndflLimit) {
+        ndfl = actualPayroll * ndflBaseRate;
+      } else {
+        ndfl = ndflLimit * ndflBaseRate + (actualPayroll - ndflLimit) * ndflIncreasedRate;
+      }
+    } else {
+      ndfl = actualPayroll * ndflBaseRate;
+    }
+
+    return {
+      contributions: Math.round(contributions * 100) / 100,
+      ndfl: Math.round(ndfl * 100) / 100,
+      rate: rate * 100,
+    };
+  }
+
+  /**
+   * Налоговый календарь на год (для планирования)
+   * Использует БЮДЖЕТНЫЕ данные, не факт
    */
   getMonthlyTaxCalendar(
     company: Company,
@@ -253,21 +344,34 @@ export class TaxEngine {
       revenueByMonth.set(month, (revenueByMonth.get(month) || 0) + budget.planned_amount);
     }
 
-    const insurance = this.calculateInsuranceContributions(company, 0);
-    const monthlyInsurance = insurance.monthly_contributions;
-    const monthlyNdfl = insurance.ndfl_monthly || 0;
-    const ipFixed = company.is_individual
-      ? parseFloat(this.settings['ip_fixed_contribution'] || '57390')
-      : 0;
+    // Планируемая зарплата из бюджетов (аккаунты payroll_accounts)
+    const payrollAccounts = (this.settings['payroll_accounts'] || 'acc-out-salary,acc-out-bonus')
+      .split(',')
+      .map((s: string) => s.trim());
+
+    const payrollByMonth = new Map<string, number>();
+    for (const budget of budgets) {
+      if (budget.company_id !== company.id) continue;
+      const accountId = budget.category_id || budget.account_id;
+      if (!payrollAccounts.includes(accountId)) continue;
+      const rawPeriod = String(budget.period || '').replace(/^'/, '');
+      const month = rawPeriod.substring(0, 7);
+      payrollByMonth.set(month, (payrollByMonth.get(month) || 0) + budget.planned_amount);
+    }
+
+    const baseRate = parseFloat(this.settings['insurance_base_rate'] || '0.30');
+    const ndflBaseRate = parseFloat(this.settings['ndfl_base_rate'] || '0.13');
+    const ipFixed = parseFloat(this.settings['ip_fixed_contribution'] || '57390');
 
     for (const monthKey of months) {
       const taxes: { [key: string]: number } = {};
       const monthRevenue = revenueByMonth.get(monthKey) || 0;
+      const monthPayroll = payrollByMonth.get(monthKey) || 0;
       const monthNum = parseInt(monthKey.substring(5, 7));
 
-      if (company.has_employees || company.monthly_payroll > 0) {
-        taxes['acc-tax-insurance'] = Math.round(monthlyInsurance * 100) / 100;
-        taxes['acc-tax-ndfl'] = Math.round(monthlyNdfl * 100) / 100;
+      if (monthPayroll > 0) {
+        taxes['acc-tax-insurance'] = Math.round(monthPayroll * baseRate * 100) / 100;
+        taxes['acc-tax-ndfl'] = Math.round(monthPayroll * ndflBaseRate * 100) / 100;
       }
 
       if (monthNum === 4 || monthNum === 7 || monthNum === 10) {
@@ -292,86 +396,6 @@ export class TaxEngine {
     }
 
     return calendar;
-  }
-
-  calculateInsuranceContributions(company: Company, revenue: number = 0): {
-    annual_contributions: number;
-    monthly_contributions: number;
-    rate: number;
-    ndfl_annual: number;
-    ndfl_monthly: number;
-    total_payroll_cost: number;
-  } {
-    const payroll = company.monthly_payroll || 0;
-    const annualPayroll = payroll * 12;
-
-    let contributions = 0;
-    let rate = 0;
-
-    if (Boolean(company.is_individual)) {
-      contributions = parseFloat(this.settings['ip_fixed_contribution'] || '57390');
-      const threshold = parseFloat(this.settings['ip_additional_threshold'] || '300000');
-      const additionalRate = parseFloat(this.settings['ip_additional_rate'] || '0.01');
-      const additionalMax = parseFloat(this.settings['ip_additional_max'] || '321818');
-
-      if (revenue > threshold) {
-        const additional = (revenue - threshold) * additionalRate;
-        contributions += Math.min(additional, additionalMax);
-      }
-      rate = 0;
-    } else if (company.industry_type === 'it') {
-      const limit = parseFloat(this.settings['insurance_limit'] || '2979000');
-      const itRate = parseFloat(this.settings['insurance_it_rate'] || '0.076');
-      const itBaseRate = parseFloat(this.settings['insurance_msp_rate'] || '0.15');
-
-      if (annualPayroll <= limit) {
-        contributions = annualPayroll * itBaseRate;
-        rate = itBaseRate * 100;
-      } else {
-        contributions = limit * itBaseRate + (annualPayroll - limit) * itRate;
-        rate = itRate * 100;
-      }
-    } else if (company.industry_type === 'msp_priority') {
-      const mrot = parseFloat(this.settings['mrot'] || '27093');
-      const mspRate = parseFloat(this.settings['insurance_msp_rate'] || '0.15');
-      const baseRate = parseFloat(this.settings['insurance_base_rate'] || '0.30');
-      const threshold = mrot * 1.5;
-      const monthlyBase = Math.min(payroll, threshold);
-      const excess = Math.max(0, payroll - threshold);
-      contributions = (monthlyBase * baseRate + excess * mspRate) * 12;
-      rate = mspRate * 100;
-    } else {
-      const limit = parseFloat(this.settings['insurance_limit'] || '2979000');
-      const baseRate = parseFloat(this.settings['insurance_base_rate'] || '0.30');
-      const reducedRate = parseFloat(this.settings['insurance_reduced_rate'] || '0.151');
-      if (annualPayroll <= limit) {
-        contributions = annualPayroll * baseRate;
-        rate = baseRate * 100;
-      } else {
-        contributions = limit * baseRate + (annualPayroll - limit) * reducedRate;
-        rate = reducedRate * 100;
-      }
-    }
-
-    const ndflLimit = parseFloat(this.settings['ndfl_limit'] || '5000000');
-    const ndflBaseRate = parseFloat(this.settings['ndfl_base_rate'] || '0.13');
-    const ndflIncreasedRate = parseFloat(this.settings['ndfl_increased_rate'] || '0.15');
-
-    let ndfl = 0;
-    if (annualPayroll <= ndflLimit) {
-      ndfl = annualPayroll * ndflBaseRate;
-    } else {
-      ndfl = ndflLimit * ndflBaseRate + (annualPayroll - ndflLimit) * ndflIncreasedRate;
-    }
-
-    return {
-      annual_contributions: Math.round(contributions * 100) / 100,
-      monthly_contributions: Math.round((contributions / 12) * 100) / 100,
-      rate,
-      ndfl_annual: Math.round(ndfl * 100) / 100,
-      ndfl_monthly: Math.round((ndfl / 12) * 100) / 100,
-      total_payroll_cost: Math.round((annualPayroll + contributions + ndfl) * 100) / 100
-    };
   }
 
   private getVatRateForUSN(revenue: number): number {
@@ -421,7 +445,6 @@ export class TaxEngine {
     const usnAllowed = revenue <= maxLimit;
     const transitionRequired = !usnAllowed;
 
-    // Определяем квартал перехода (если превышен лимит)
     let transitionQuarter: string | null = null;
     if (transitionRequired) {
       const currentMonth = new Date().getMonth() + 1;
@@ -457,9 +480,7 @@ export class TaxEngine {
       }
     };
   }
-  /**
- * Получить среднемесячную выручку (Run Rate) за последние 3 месяца
- */
+
   getMonthlyRunRate(company: Company, transactions: Transaction[]): number {
     const last3Months: string[] = [];
     const now = new Date();
@@ -484,10 +505,10 @@ export class TaxEngine {
     const startDate = new Date(periodStart);
     const endDate = new Date(periodEnd);
     const daysInPeriod = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-
     const fraction = daysInPeriod / 365;
     return Math.min(1, Math.max(fraction, 1 / 365));
   }
+
   private getDateStr(date: any): string {
     if (!date) return '';
     if (typeof date === 'string') return date.split('T')[0];
