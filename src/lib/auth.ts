@@ -1,39 +1,36 @@
 /**
  * ============================================
- * FinEngine 2026 - Аутентификация
+ * FinEngine 2026 - Клиентская аутентификация
  * ============================================
+ * Сессия хранится в HttpOnly cookie — JS её не видит.
+ * Здесь только вспомогательные функции.
  */
 
-export interface Session {
-  userEmail: string;
-  userName: string;
-  userRole: string;
-  userId: string;
-  companyId: string;
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  company_id: string;
 }
 
-const SESSION_KEY = 'finengine_session';
-
-export function saveSession(session: Session): void {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-}
-
-export function getSession(): Session | null {
-  if (typeof window === 'undefined') return null;
-  const data = localStorage.getItem(SESSION_KEY);
-  if (!data) return null;
+export async function fetchCurrentUser(): Promise<SessionUser | null> {
   try {
-    return JSON.parse(data);
+    const res = await fetch('/api/auth/me', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.user || null;
   } catch {
     return null;
   }
 }
 
-export function clearSession(): void {
-  localStorage.removeItem(SESSION_KEY);
-}
-
-
-export function isAuthenticated(): boolean {
-  return getSession() !== null;
+export async function logout(): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  } catch (e) {
+    console.error('Logout error:', e);
+    window.location.href = '/login';
+  }
 }
