@@ -4,9 +4,15 @@ import { taxEngine } from '@/lib/engine/tax';
 import { loadSystemAccounts } from '@/lib/config/accounts';
 import { getRepository } from '@/lib/dal/repository';
 import { dataCache, CACHE_PREFIXES } from '@/lib/cache';
+import { getSessionUser } from '@/lib/auth-server';
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+    }
+
     const url = new URL(request.url);
     const companyId = url.searchParams.get('company_id');
     const scenario = url.searchParams.get('scenario') || 'base';
@@ -90,6 +96,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+    }
+
     const body = await request.json();
     const action = body.action;
     const repo = getRepository();
