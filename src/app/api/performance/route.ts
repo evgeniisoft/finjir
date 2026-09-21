@@ -3,6 +3,8 @@ import { calculator } from '@/lib/engine/calculator';
 import { taxEngine } from '@/lib/engine/tax';
 import { loadSystemAccounts } from '@/lib/config/accounts';
 import { getRepository } from '@/lib/dal/repository';
+import { getSessionUser } from '@/lib/auth-server';
+
 
 async function repoGet(
   repo: any,
@@ -16,6 +18,11 @@ async function repoGet(
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+    }
+
     const repo = getRepository();
     const results: any[] = [];
 
