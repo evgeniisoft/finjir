@@ -3,7 +3,6 @@ import { getSystemAccount } from "@/lib/config/accounts";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isAuthenticated } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { formatDay } from "@/lib/utils/dateFormat";
 import { getPeriodRange, type PeriodType } from "@/lib/utils/period";
@@ -41,10 +40,6 @@ export default function Dashboard() {
   }>({});
 
   useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push("/login");
-      return;
-    }
     loadData({ start: period.start, end: period.end });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
