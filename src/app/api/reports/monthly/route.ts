@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { monthlyEngine } from '@/lib/engine/monthly';
 import { taxEngine } from '@/lib/engine/tax';
 import { getRepository } from '@/lib/dal/repository';
+import { getSessionUser } from '@/lib/auth-server';
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+    }
+
     const url = new URL(request.url);
     const companyId = url.searchParams.get('company_id') || '';
     const periodStart = url.searchParams.get('period_start') || '2026-01-01';
