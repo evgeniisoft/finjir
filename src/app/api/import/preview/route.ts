@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseCSV } from '@/lib/engine/parsers';
 import { suggestTargetField } from '@/lib/engine/autoMapper';
+import { getSessionUser } from '@/lib/auth-server';
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+    }
+    if (!['owner', 'admin'].includes(user.role)) {
+      return NextResponse.json({ error: 'Нет прав' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { file_content, target_type } = body;
 
