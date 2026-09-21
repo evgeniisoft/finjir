@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRepository } from '@/lib/dal/repository';
+import { getSessionUser } from '@/lib/auth-server';
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Не авторизован' }, { status: 401 });
+    }
+    if (!['owner', 'admin'].includes(user.role)) {
+      return NextResponse.json({ success: false, error: 'Нет прав' }, { status: 403 });
+    }
+
     const repo = getRepository();
     const body = await request.json();
     const { check_id, action, data } = body;
-    const userEmail = request.headers.get('X-User-Email') || 'system';
+    const userEmail = user.email || 'system';
 
     if (!action) {
       return NextResponse.json({ success: false, error: 'Не указано действие' }, { status: 400 });
