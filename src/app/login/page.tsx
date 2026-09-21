@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { saveSession } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,7 +23,7 @@ export default function LoginPage() {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
       });
 
       const result = await response.json();
@@ -34,16 +33,8 @@ export default function LoginPage() {
         return;
       }
 
-      saveSession({
-        userEmail: result.user.email,
-        userName: result.user.name,
-        userRole: result.user.role,
-        userId: result.user.id,
-        companyId: result.user.company_id || ''
-      });
-
       router.push('/');
-
+      router.refresh();
     } catch (err) {
       console.error('Ошибка:', err);
       setError('Ошибка подключения');
@@ -59,9 +50,7 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-gray-900">
             FinJir <span className="text-blue-600">2026</span>
           </h1>
-          <p className="text-gray-500 mt-2">
-            Управленческий учёт
-          </p>
+          <p className="text-gray-500 mt-2">Управленческий учёт</p>
         </div>
 
         {error && (
@@ -72,9 +61,7 @@ export default function LoginPage() {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
               type="email"
               value={email}
@@ -86,9 +73,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Пароль
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
             <input
               type="password"
               value={password}
@@ -102,7 +87,7 @@ export default function LoginPage() {
           <button
             onClick={handleLogin}
             disabled={loading}
-            className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+            className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? 'Вход...' : 'Войти'}
           </button>
