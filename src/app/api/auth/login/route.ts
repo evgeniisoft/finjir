@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { createSession, setSessionCookie } from '@/lib/auth-server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -7,7 +8,10 @@ export async function POST(request: NextRequest) {
     const { email, password } = body;
 
     if (!email || !password) {
-      return NextResponse.json({ error: 'Введите email и пароль' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Введите email и пароль' },
+        { status: 400 }
+      );
     }
 
     const user = await prisma.user.findFirst({
@@ -18,14 +22,20 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json({ error: 'Пользователь не найден или неактивен' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Пользователь не найден или неактивен' },
+        { status: 401 }
+      );
     }
 
     if (String(user.password) !== String(password)) {
       return NextResponse.json({ error: 'Неверный пароль' }, { status: 401 });
     }
 
-    // Записываем в AuditLog
+    // Создаём сессию
+    const { token, expiresAt } = await createSession(user.id, request);
+
+    // AuditLog
     try {
       await prisma.auditLogEntry.create({
         data: {
@@ -38,10 +48,10 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch (e) {
-      console.error('Ошибка записи в AuditLog:', e);
+      console.error('AuditLog error:', e);
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       user: {
         id: user.id,
@@ -52,11 +62,9 @@ export async function POST(request: NextRequest) {
       },
     });
 
-  } catch (error: any) {
-    console.error('Ошибка входа:', error);
-    return NextResponse.json(
-      { error: 'Внутренняя ошибка: ' + error.message },
-      { status: 500 }
-    );
+    return setSessionCookie(response, token, expiresAt);
+  } catch (e: any) {
+    console.error('Login error:', e);
+    return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
