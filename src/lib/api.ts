@@ -1,4 +1,3 @@
-import { getSession } from './auth';
 import { dataCache, CACHE_PREFIXES } from './cache';
 
 export type SheetName =
