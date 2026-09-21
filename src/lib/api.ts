@@ -39,7 +39,8 @@ class ApiClient {
     try {
       const url = `${this.baseUrl}?action=getAll&sheet=${sheet}`;
       const response = await fetch(url, {
-        headers: this.getHeaders()
+        headers: this.getHeaders(),
+        credentials: 'include',
       });
       const data = await response.json();
 
@@ -65,7 +66,8 @@ class ApiClient {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify({ action: 'create', sheet, data })
+        body: JSON.stringify({ action: 'create', sheet, data }),
+        credentials: 'include',
       });
 
       const result = await response.json();
@@ -89,7 +91,8 @@ class ApiClient {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify({ action: 'update', sheet, id, data })
+        body: JSON.stringify({ action: 'update', sheet, id, data }),
+        credentials: 'include',
       });
 
       const result = await response.json();
@@ -112,7 +115,8 @@ class ApiClient {
     try {
       const url = `${this.baseUrl}?action=delete&sheet=${sheet}&id=${encodeURIComponent(id)}`;
       const response = await fetch(url, {
-        headers: this.getHeaders()
+        headers: this.getHeaders(),
+        credentials: 'include',
       });
       const result = await response.json();
 
@@ -135,7 +139,8 @@ class ApiClient {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify({ action: 'batchCreate', sheet, data: dataArray })
+        body: JSON.stringify({ action: 'batchCreate', sheet, data: dataArray }),
+        credentials: 'include',
       });
 
       const result = await response.json();
