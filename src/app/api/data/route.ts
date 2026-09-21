@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRepository } from '@/lib/dal/repository';
 import { dataCache, CACHE_PREFIXES } from '@/lib/cache';
+import { getSessionUser } from '@/lib/auth-server';
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+    }
+
     const url = new URL(request.url);
     const action = url.searchParams.get('action');
     const sheet = url.searchParams.get('sheet');
@@ -50,6 +56,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+    }
+
     const body = await request.json();
     const action = body.action;
     const sheet = body.sheet;
