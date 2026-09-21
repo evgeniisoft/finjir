@@ -4,11 +4,17 @@ import { DiagnosticContext } from '@/lib/diagnostics/types';
 import { loadSystemAccounts, getSystemAccounts } from '@/lib/config/accounts';
 import { taxEngine } from '@/lib/engine/tax';
 import { getRepository } from '@/lib/dal/repository';
+import { getSessionUser } from '@/lib/auth-server';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
+    const user = await getSessionUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+    }
+
     const url = new URL(request.url);
     const year = url.searchParams.get('year') || String(new Date().getFullYear());
 
