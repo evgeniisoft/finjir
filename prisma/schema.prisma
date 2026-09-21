@@ -251,3 +251,17 @@ model ImportLog {
 
   @@map("import_logs")
 }
+
+model Session {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  user_id    String
+  tenant_id  String?  @default("tenant-1")
+  expires_at DateTime
+  created_at DateTime @default(now())
+  ip_address String?
+  user_agent String?
+
+  @@index([user_id])
+  @@map("sessions")
+}
