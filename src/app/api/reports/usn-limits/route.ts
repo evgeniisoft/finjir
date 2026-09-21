@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { taxEngine } from '@/lib/engine/tax';
+import { getSessionUser } from '@/lib/auth-server';
 
 const GAS_URL = process.env.NEXT_PUBLIC_GAS_URL || 'https://script.google.com/macros/s/AKfycbzdcT2cZO5ynSBVMWakir1Y5aAaf5MJaqRq1C8zXDrECdaLbtT_yw3idz7FUNjpMShriw/exec';
 
@@ -12,6 +13,11 @@ async function gasGet(sheet: string): Promise<any[]> {
 
 export async function GET(request: NextRequest) {
     try {
+        const user = await getSessionUser(request);
+        if (!user) {
+            return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+        }
+
         const [transactions, companies, settings] = await Promise.all([
             gasGet('Transactions'),
             gasGet('Companies'),
