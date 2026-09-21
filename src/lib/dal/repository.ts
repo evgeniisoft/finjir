@@ -35,6 +35,7 @@ const ENTITY_TO_MODEL: Record<string, string> = {
   DataSources: "dataSource",
   DataMappings: "dataMapping",
   ImportLogs: "importLog",
+  Sessions: 'session',
 };
 
 const MODEL_TO_TABLE: Record<string, string> = {
@@ -51,6 +52,7 @@ const MODEL_TO_TABLE: Record<string, string> = {
   dataSource: "data_sources",
   dataMapping: "data_mappings",
   importLog: "import_logs",
+  session: 'sessions',
 };
 
 function getModel(entity: string): any {
