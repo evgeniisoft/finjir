@@ -535,39 +535,41 @@ export default function PlanningPage() {
             </button>
           </div>
 
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-            <button
-              onClick={() => setBudgetType('pnl')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${budgetType === 'pnl' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
-            >
-              БДР (P&L)
-            </button>
-            <button
-              onClick={() => setBudgetType('cashflow')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${budgetType === 'cashflow' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
-            >
-              БДДС (Cash Flow)
-            </button>
-          </div>
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-            <button
-              onClick={() => setViewMode('plan')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode === 'plan' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
-            >
-              План
-            </button>
-            <button
-              onClick={() => setViewMode('actual')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode === 'actual' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
-            >
-              Факт
-            </button>
-            <button
-              onClick={() => setViewMode('deviation')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode === 'deviation' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
-            >
-              Отклонение
-            </button>
+          <div className="flex gap-2 items-center flex-wrap">
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+              <button
+                onClick={() => setBudgetType('pnl')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${budgetType === 'pnl' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+              >
+                БДР (P&L)
+              </button>
+              <button
+                onClick={() => setBudgetType('cashflow')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${budgetType === 'cashflow' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+              >
+                БДДС (Cash Flow)
+              </button>
+            </div>
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+              <button
+                onClick={() => setViewMode('plan')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode === 'plan' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+              >
+                План
+              </button>
+              <button
+                onClick={() => setViewMode('actual')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode === 'actual' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+              >
+                Факт
+              </button>
+              <button
+                onClick={() => setViewMode('deviation')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${viewMode === 'deviation' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+              >
+                Отклонение
+              </button>
+            </div>
           </div>
         </div>
       </div>
