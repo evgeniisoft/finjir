@@ -36,6 +36,9 @@ const ENTITY_TO_MODEL: Record<string, string> = {
   DataMappings: "dataMapping",
   ImportLogs: "importLog",
   Sessions: 'session',
+  DataQualityRules: 'dataQualityRule',
+  DataQualityExceptions: 'dataQualityException',
+  DataQualityActionLogs: 'dataQualityActionLog',
 };
 
 const MODEL_TO_TABLE: Record<string, string> = {
@@ -53,6 +56,9 @@ const MODEL_TO_TABLE: Record<string, string> = {
   dataMapping: "data_mappings",
   importLog: "import_logs",
   session: 'sessions',
+  dataQualityRule: 'data_quality_rules',
+  dataQualityException: 'data_quality_exceptions',
+  dataQualityActionLog: 'data_quality_action_log',
 };
 
 function getModel(entity: string): any {
