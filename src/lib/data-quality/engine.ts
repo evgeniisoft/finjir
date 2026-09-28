@@ -175,9 +175,8 @@ export class DataQualityEngine {
   ): Violation {
     const problemTemplate = rule.problem_template || defaultProblemTemplate(rule);
     const explanationTemplate = rule.explanation_template || defaultExplanationTemplate(rule);
-    const actions = rule.suggested_actions && rule.suggested_actions.length > 0
-      ? rule.suggested_actions
-      : defaultActionsForRule(rule, data);
+    // ВСЕГДА пересчитываем действия на лету — чтобы fuzzy match был актуальным
+    const actions = defaultActionsForRule(rule, data);
 
     return {
       rule_id: rule.id,
