@@ -13,6 +13,7 @@ export default function Navigation() {
     { href: '/planning', label: 'Планирование' },
     { href: '/settings', label: 'Настройки' },
     { href: '/diagnostics', label: 'Диагностика' },
+    { href: '/settings/data-quality', label: 'Качество данных' },
   ];
 
   return (
