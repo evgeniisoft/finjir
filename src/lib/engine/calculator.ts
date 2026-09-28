@@ -15,6 +15,7 @@ import {
 } from './types';
 import { taxEngine } from './tax';
 import { getSystemAccount } from '@/lib/config/accounts';
+import { isOpexAccount, isRevenueAccount, isCogsAccount } from './opex-filter';
 
 export class FinancialCalculator {
 
@@ -63,8 +64,8 @@ export class FinancialCalculator {
   }
 
   /**
-  * Расчёт ДДС (Cash Flow)
-  */
+   * Расчёт ДДС (Cash Flow)
+   */
   calculateCashFlow(
     transactions: Transaction[],
     accounts: Account[],
@@ -172,6 +173,12 @@ export class FinancialCalculator {
 
   /**
    * Расчёт ОПиУ (P&L)
+   *
+   * Классификация расходов через единый фильтр isOpexAccount / isCogsAccount:
+   * - COGS: X-тип с is_cost_of_goods=true
+   * - OPEX: X-тип, activity_type='operating', кроме налогов, амортизации,
+   *         capex, кредитов, дивидендов
+   * - Дивиденды, capex, кредиты — НЕ попадают в OPEX (это правильно)
    */
   calculatePnL(
     transactions: Transaction[],
@@ -200,37 +207,44 @@ export class FinancialCalculator {
     // Выручка без НДС из налогового расчёта
     const revenue = taxCalc.revenue_without_vat;
 
-    // Классифицируем расходы
     // Определяем, включает ли компания НДС
     const vatIncluded = String(company?.vat_included).toLowerCase() === 'true';
     const vatRate = parseFloat(String(company?.vat_rate || '0'));
 
-    // Классифицируем расходы (с выделением НДС для ОСНО)
+    // Классифицируем расходы через единый фильтр
     for (const t of filtered) {
       const debitAccount = accounts.find(a => a.id === t.debit_account_id);
       const creditAccount = accounts.find(a => a.id === t.credit_account_id);
 
       if (!debitAccount || !creditAccount) continue;
 
-      if (debitAccount.type === 'X') {
-        const category = debitAccount.code;
-        const isCOGS = Boolean(debitAccount.is_cost_of_goods);
-
-        // Выделяем НДС из расходов для ОСНО
+      // Себестоимость — отдельно от OPEX
+      if (isCogsAccount(debitAccount)) {
         let expenseAmount = t.amount_rub || 0;
         if (vatIncluded && vatRate > 0) {
           expenseAmount = expenseAmount / (1 + vatRate);
         }
+        costOfGoodsSold += expenseAmount;
+        continue;
+      }
 
-        if (isCOGS || category === 'COGS') {
-          costOfGoodsSold += expenseAmount;
-        } else if (category === 'DEPRECIATION') {
-          depreciation += expenseAmount;
-        } else if (category === 'TAXES') {
-          taxes += expenseAmount;
-        } else {
-          operatingExpenses += expenseAmount;
+      // Амортизация — отдельно
+      if (debitAccount.type === 'X' && debitAccount.id.startsWith('acc-depreciation-')) {
+        let expenseAmount = t.amount_rub || 0;
+        if (vatIncluded && vatRate > 0) {
+          expenseAmount = expenseAmount / (1 + vatRate);
         }
+        depreciation += expenseAmount;
+        continue;
+      }
+
+      // OPEX — через единый фильтр
+      if (isOpexAccount(debitAccount)) {
+        let expenseAmount = t.amount_rub || 0;
+        if (vatIncluded && vatRate > 0) {
+          expenseAmount = expenseAmount / (1 + vatRate);
+        }
+        operatingExpenses += expenseAmount;
       }
     }
 
@@ -364,6 +378,7 @@ export class FinancialCalculator {
       }
     };
   }
+
   /**
    * Вспомогательные функции
    */
