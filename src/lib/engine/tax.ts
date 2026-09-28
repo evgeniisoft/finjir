@@ -10,6 +10,7 @@
 
 import { Company, Transaction, Account, Budget } from "./types";
 import { getSystemAccount } from "@/lib/config/accounts";
+import { isOpexAccount, isRevenueAccount } from "./opex-filter";
 
 export interface TaxCalculation {
   company_id: string;
@@ -87,12 +88,13 @@ export class TaxEngine {
         )
       : 0;
 
+    // Выручка — через единый фильтр isRevenueAccount
     const revenueWithVAT = companyTx
       .filter((t) => {
         const creditAccount = accounts.find(
           (a) => a.id === t.credit_account_id,
         );
-        return creditAccount?.type === "I";
+        return creditAccount && isRevenueAccount(creditAccount);
       })
       .reduce((sum, t) => sum + parseFloat(String(t.amount || 0)), 0);
 
@@ -104,16 +106,11 @@ export class TaxEngine {
       outgoingVAT = revenueWithVAT - revenueWithoutVAT;
     }
 
+    // Расходы — через единый фильтр isOpexAccount
     const expensesWithVAT = companyTx
       .filter((t) => {
         const debitAccount = accounts.find((a) => a.id === t.debit_account_id);
-        if (!debitAccount || debitAccount.type !== "X") return false;
-        if (debitAccount.id.startsWith("acc-tax-")) return false;
-        if (debitAccount.id.startsWith("acc-depreciation-")) return false;
-        if (debitAccount.id === "acc-out-capex") return false;
-        if (debitAccount.id.startsWith("acc-out-loan-")) return false;
-        if (debitAccount.id === "acc-out-dividends") return false;
-        return true;
+        return debitAccount && isOpexAccount(debitAccount);
       })
       .reduce((sum, t) => sum + parseFloat(String(t.amount || 0)), 0);
 
@@ -514,9 +511,14 @@ export class TaxEngine {
     };
   } {
     const currentYear = new Date().getFullYear().toString();
+    // Берём только ФАКТ — плановые транзакции не влияют на лимит
     const yearTx = transactions.filter((t) => {
       const txDate = this.getDateStr(t.date);
-      return t.company_id === company.id && txDate.startsWith(currentYear);
+      return (
+        t.company_id === company.id &&
+        t.record_type === "fact" &&
+        txDate.startsWith(currentYear)
+      );
     });
 
     const revenue = yearTx
