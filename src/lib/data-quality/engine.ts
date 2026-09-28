@@ -15,7 +15,7 @@ import {
   defaultProblemTemplate,
   defaultExplanationTemplate,
   defaultActionsForRule,
-  suggestAccountByKeywords,
+  suggestAccountForEntity,
 } from './templates';
 
 export interface DataQualityData {
@@ -175,8 +175,10 @@ export class DataQualityEngine {
   ): Violation {
     const problemTemplate = rule.problem_template || defaultProblemTemplate(rule);
     const explanationTemplate = rule.explanation_template || defaultExplanationTemplate(rule);
-    // ВСЕГДА пересчитываем действия на лету — чтобы fuzzy match был актуальным
-    const actions = defaultActionsForRule(rule, data);
+    // ВСЕГДА пересчитываем действия на лету — чтобы fuzzy match был актуальным.
+    // Передаём entity, чтобы для must_not_contain использовать матч по description,
+    // а не по keywords правила.
+    const actions = defaultActionsForRule(rule, data, entity);
 
     return {
       rule_id: rule.id,
@@ -205,9 +207,7 @@ export class DataQualityEngine {
         return acc?.name || '—';
       }
       if (key === 'suggested_account') {
-        // Пробуем найти подходящий счёт по keywords правила.
-        // В template мы не имеем rule, поэтому используем общий fuzzy-match.
-        const acc = this.suggestAccountForEntity(entity, data);
+        const acc = suggestAccountForEntity(entity, data.accounts);
         return acc?.name || '—';
       }
       const val = entity[key];
@@ -217,48 +217,7 @@ export class DataQualityEngine {
     });
   }
 
-  private suggestAccountForEntity(entity: any, data: DataQualityData): any | null {
-    const desc = String(entity.description || '').toLowerCase().trim();
-    if (!desc) return null;
-
-    const currentAccountId = entity.debit_account_id || entity.credit_account_id;
-    const descWords = desc.split(/\s+/).filter(w => w.length >= 4);
-    if (descWords.length === 0) return null;
-
-    let best: { account: any; score: number; nameLen: number } | null = null;
-
-    for (const acc of data.accounts) {
-      if (acc.type !== 'X') continue;
-      if (acc.id === currentAccountId) continue;
-
-      const accName = String(acc.name || '').toLowerCase().trim();
-      if (!accName) continue;
-
-      const accWords = accName.split(/\s+/).filter(w => w.length >= 4);
-      if (accWords.length === 0) continue;
-
-      let score = 0;
-      for (const accWord of accWords) {
-        if (descWords.includes(accWord)) {
-          score += 2;
-          continue;
-        }
-        const stem = accWord.length > 5 ? accWord.slice(0, accWord.length - 2) : accWord;
-        if (descWords.some(dw => dw.includes(stem) || stem.includes(dw))) {
-          score += 1;
-        }
-      }
-
-      if (score > 0) {
-        const nameLen = accName.length;
-        if (!best || score > best.score || (score === best.score && nameLen < best.nameLen)) {
-          best = { account: acc, score, nameLen };
-        }
-      }
-    }
-
-    return best?.account || null;
-  }
+  
 }
 
 export const dataQualityEngine = new DataQualityEngine();
