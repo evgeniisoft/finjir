@@ -265,3 +265,79 @@ model Session {
   @@index([user_id])
   @@map("sessions")
 }
+// ============================================
+// Качество данных (Data Quality)
+// ============================================
+
+model DataQualityRule {
+  id                   String    @id @default(uuid())
+  tenant_id            String?   @default("tenant-1")
+
+  // Идентификация
+  name                 String
+  description          String?
+  category             String    @default("general") // classification | completeness | format | general
+
+  // Логика проверки
+  rule_type            String    // must_contain | must_not_contain | required_field | range | enum | regex
+  entity_type          String    // Transactions | Accounts | Companies | Budgets
+  target_field         String    // description | amount_rub | ...
+
+  // Условие применения (JSON)
+  condition            String?   // {"debit_account_id": "acc-out-training"} | {"debit_account_id_like": "acc-out-%"}
+
+  // Параметры правила (JSON, зависит от rule_type)
+  params               String?   // {"keywords": ["обучен"]} | {"min": 0, "max": 1000000000} | {"values": [...]} | {"pattern": "..."}
+
+  // Guided workflow
+  problem_template     String?   // "Описание «{description}» не соответствует счёту «{account_name}»"
+  explanation_template String?   // "В системе есть счёт «{suggested_account}». Возможно, вы имели в виду его."
+  suggested_actions    String?   // JSON: SuggestedAction[]
+
+  // Управление
+  severity             String    @default("warning") // critical | warning | info
+  is_active            Boolean   @default(true)
+  auto_apply           Boolean   @default(false)
+
+  is_deleted           String?   @default("")
+  deleted_at           DateTime?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  @@index([is_active])
+  @@index([entity_type])
+  @@map("data_quality_rules")
+}
+
+model DataQualityException {
+  id          String    @id @default(uuid())
+  tenant_id   String?   @default("tenant-1")
+  rule_id     String
+  entity_type String
+  entity_id   String
+  reason      String?
+  created_by  String?
+  created_at  DateTime  @default(now())
+
+  @@unique([rule_id, entity_type, entity_id])
+  @@index([rule_id])
+  @@index([entity_id])
+  @@map("data_quality_exceptions")
+}
+
+model DataQualityActionLog {
+  id           String    @id @default(uuid())
+  tenant_id    String?   @default("tenant-1")
+  rule_id      String?
+  action_type  String
+  entity_type  String
+  entity_id    String
+  before_value String?
+  after_value  String?
+  user_id      String?
+  created_at   DateTime  @default(now())
+
+  @@index([rule_id])
+  @@index([entity_id])
+  @@map("data_quality_action_log")
+}
