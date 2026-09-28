@@ -17,40 +17,74 @@ export async function POST(request: NextRequest) {
       repo.getAll('DataQualityRules'),
       repo.getAll('Accounts'),
     ]);
-    const existingNames = new Set(existing.map((r: any) => r.name));
 
-    const toCreate = SEED_RULES
-      .filter(r => !existingNames.has(r.name!))
-      .map(r => ({
+    // Разделяем на активные и удалённые по имени
+    const activeNames = new Set(
+      existing.filter((r: any) => r.is_deleted !== 'true').map((r: any) => r.name)
+    );
+    const deletedByName = new Map<string, any>();
+    for (const r of existing) {
+      if (r.is_deleted === 'true') {
+        deletedByName.set(r.name, r);
+      }
+    }
+
+    let created = 0;
+    let restored = 0;
+    let skipped = 0;
+
+    for (const seedRule of SEED_RULES) {
+      const name = seedRule.name!;
+
+      if (activeNames.has(name)) {
+        skipped++;
+        continue;
+      }
+
+      const existingDeleted = deletedByName.get(name);
+      if (existingDeleted) {
+        await repo.update('DataQualityRules', existingDeleted.id, {
+          is_deleted: '',
+          deleted_at: null,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        });
+        restored++;
+        continue;
+      }
+
+      const toCreate = {
         tenant_id: 'tenant-1',
-        name: r.name!,
-        description: r.description || null,
-        category: r.category || 'general',
-        rule_type: r.rule_type!,
-        entity_type: r.entity_type!,
-        target_field: r.target_field!,
-        condition: JSON.stringify(r.condition || {}),
-        params: JSON.stringify(r.params || {}),
-        problem_template: r.problem_template || defaultProblemTemplate(r),
-        explanation_template: r.explanation_template || defaultExplanationTemplate(r),
+        name,
+        description: seedRule.description || null,
+        category: seedRule.category || 'general',
+        rule_type: seedRule.rule_type!,
+        entity_type: seedRule.entity_type!,
+        target_field: seedRule.target_field!,
+        condition: JSON.stringify(seedRule.condition || {}),
+        params: JSON.stringify(seedRule.params || {}),
+        problem_template: seedRule.problem_template || defaultProblemTemplate(seedRule),
+        explanation_template: seedRule.explanation_template || defaultExplanationTemplate(seedRule),
         suggested_actions: JSON.stringify(
-          r.suggested_actions || defaultActionsForRule(r, { accounts, companies: [] })
+          seedRule.suggested_actions || defaultActionsForRule(seedRule, { accounts, companies: [] })
         ),
-        severity: r.severity || 'warning',
-        is_active: r.is_active !== false,
-        auto_apply: Boolean(r.auto_apply),
+        severity: seedRule.severity || 'warning',
+        is_active: seedRule.is_active !== false,
+        auto_apply: Boolean(seedRule.auto_apply),
         is_deleted: '',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      }));
-
-    let created = 0;
-    for (const rule of toCreate) {
-      await repo.create('DataQualityRules', rule);
+      };
+      await repo.create('DataQualityRules', toCreate);
       created++;
     }
 
-    return NextResponse.json({ success: true, created, skipped: SEED_RULES.length - created });
+    return NextResponse.json({
+      success: true,
+      created,
+      restored,
+      skipped,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
