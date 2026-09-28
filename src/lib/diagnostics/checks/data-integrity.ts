@@ -43,6 +43,9 @@ export async function runDataIntegrityChecks(ctx: DiagnosticContext): Promise<Di
     // 1.10 Группы счетов
     checks.push(...checkAccountGroups(ctx));
 
+    // 1.11 Качество данных (сводка)
+    checks.push(...await checkDataQuality(ctx));
+
     return checks;
 
 }
@@ -540,4 +543,86 @@ function checkAccountGroups(ctx: DiagnosticContext): DiagnosticCheck[] {
     }
 
     return checks;
+}
+// ============================================
+// 1.11 Сводка по качеству данных
+// ============================================
+async function checkDataQuality(ctx: DiagnosticContext): Promise<DiagnosticCheck[]> {
+  const id = 'data_quality_summary';
+  try {
+    const { getRepository } = await import('@/lib/dal/repository');
+    const { dataQualityEngine } = await import('@/lib/data-quality/engine');
+
+    const repo = getRepository();
+    const [rulesRaw, exceptions] = await Promise.all([
+      repo.getAll('DataQualityRules'),
+      repo.getAll('DataQualityExceptions'),
+    ]);
+
+    const rules = rulesRaw
+      .filter((r: any) => !r.is_deleted && r.is_active)
+      .map((r: any) => ({
+        ...r,
+        condition: safeParse(r.condition),
+        params: safeParse(r.params),
+        suggested_actions: safeParse(r.suggested_actions),
+      }));
+
+    if (rules.length === 0) {
+      return [okCheck(id, LEVEL, CATEGORY, 'Качество данных', 'Правила не настроены')];
+    }
+
+    const violations = dataQualityEngine.run(
+      rules,
+      {
+        transactions: ctx.transactions,
+        accounts: ctx.accounts,
+        companies: ctx.companies,
+        budgets: ctx.budgets,
+      },
+      exceptions,
+    );
+
+    if (violations.length === 0) {
+      return [okCheck(id, LEVEL, CATEGORY, 'Качество данных', 'Нарушений нет')];
+    }
+
+    const critical = violations.filter(v => v.severity === 'critical').length;
+    const warning = violations.filter(v => v.severity === 'warning').length;
+    const info = violations.filter(v => v.severity === 'info').length;
+
+    const severity = critical > 0 ? 'critical' : warning > 0 ? 'warning' : 'info';
+
+    return [problemCheck(
+      id, LEVEL, CATEGORY, severity,
+      'Качество данных',
+      `${violations.length} нарушений (${critical} критичных, ${warning} warning, ${info} info)`,
+      {
+        count: violations.length,
+        details: {
+          total: violations.length,
+          critical,
+          warning,
+          info,
+        },
+        reason: 'Операции не соответствуют правилам качества данных',
+        recommendation: 'Разобрать нарушения в разделе «Качество данных»',
+        display: {
+          type: 'list',
+          items: [
+            { label: 'Нарушений', value: String(violations.length), color: severity === 'critical' ? 'red' : 'yellow' },
+            { label: 'Критичных', value: String(critical), color: critical > 0 ? 'red' : 'gray' },
+          ],
+        },
+      },
+    )];
+  } catch (e: any) {
+    return [okCheck(id, LEVEL, CATEGORY, 'Качество данных', `Недоступно: ${e.message}`)];
+  }
+}
+
+function safeParse(s: any): any {
+  if (!s) return null;
+  if (typeof s !== 'string') return s;
+  try { return JSON.parse(s); } catch { return null; }
 }
