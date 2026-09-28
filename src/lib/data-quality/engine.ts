@@ -219,19 +219,46 @@ export class DataQualityEngine {
   }
 
   private suggestAccountForEntity(entity: any, data: DataQualityData): any | null {
-    const desc = String(entity.description || '').toLowerCase();
+    const desc = String(entity.description || '').toLowerCase().trim();
     if (!desc) return null;
+
+    const currentAccountId = entity.debit_account_id || entity.credit_account_id;
+    const descWords = desc.split(/\s+/).filter(w => w.length >= 4);
+    if (descWords.length === 0) return null;
+
+    let best: { account: any; score: number; nameLen: number } | null = null;
 
     for (const acc of data.accounts) {
       if (acc.type !== 'X') continue;
-      const accName = String(acc.name || '').toLowerCase();
+      if (acc.id === currentAccountId) continue;
+
+      const accName = String(acc.name || '').toLowerCase().trim();
       if (!accName) continue;
-      const firstWord = accName.split(/\s+/)[0];
-      if (firstWord && firstWord.length >= 4 && desc.includes(firstWord)) {
-        return acc;
+
+      const accWords = accName.split(/\s+/).filter(w => w.length >= 4);
+      if (accWords.length === 0) continue;
+
+      let score = 0;
+      for (const accWord of accWords) {
+        if (descWords.includes(accWord)) {
+          score += 2;
+          continue;
+        }
+        const stem = accWord.length > 5 ? accWord.slice(0, accWord.length - 2) : accWord;
+        if (descWords.some(dw => dw.includes(stem) || stem.includes(dw))) {
+          score += 1;
+        }
+      }
+
+      if (score > 0) {
+        const nameLen = accName.length;
+        if (!best || score > best.score || (score === best.score && nameLen < best.nameLen)) {
+          best = { account: acc, score, nameLen };
+        }
       }
     }
-    return null;
+
+    return best?.account || null;
   }
 }
 
