@@ -210,6 +210,7 @@ export default function SettingsPage() {
     { id: "payment_delays", label: "Отсрочки платежей" },
     { id: "users", label: "Пользователи" },
     { id: "notifications", label: "Уведомления" },
+    { id: "data_quality", label: "Качество данных" },
   ];
 
   return (
@@ -237,6 +238,8 @@ export default function SettingsPage() {
                     window.location.href = "/settings/taxes";
                   } else if (section.id === "payment_delays") {
                     window.location.href = "/settings/payment-delays";
+                  } else if (section.id === "data_quality") {
+                    window.location.href = "/settings/data-quality";
                   } else {
                     setActiveSection(section.id);
                   }
