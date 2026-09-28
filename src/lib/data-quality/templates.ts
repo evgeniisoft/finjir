@@ -54,18 +54,27 @@ export function defaultExplanationTemplate(rule: Partial<DataQualityRule>): stri
 
 /**
  * Дефолтные suggested_actions по типу правила.
- * Для must_not_contain — пытаемся найти подходящий счёт через fuzzy match.
+ *
+ * Для must_not_contain:
+ *   - если передан entity (конкретная транзакция) — используем suggestAccountForEntity
+ *     (матч по description конкретной транзакции);
+ *   - если entity не передан (редактор правила) — используем suggestAccountByKeywords
+ *     (матч по keywords правила).
  */
 export function defaultActionsForRule(
   rule: Partial<DataQualityRule>,
   data: { accounts: any[]; companies: any[] },
+  entity?: any,
 ): SuggestedAction[] {
   const actions: SuggestedAction[] = [];
 
   switch (rule.rule_type) {
     case 'must_not_contain': {
-      // Ищем счёт, подходящий под keywords.
-      const suggestion = suggestAccountByKeywords(rule.params?.keywords || [], data.accounts);
+      // Если есть конкретная транзакция — матчим по её description.
+      // Иначе (редактор правила) — матчим по keywords правила.
+      const suggestion = entity
+        ? suggestAccountForEntity(entity, data.accounts)
+        : suggestAccountByKeywords(rule.params?.keywords || [], data.accounts);
 
       if (suggestion) {
         actions.push({
@@ -195,11 +204,12 @@ export function defaultActionsForRule(
 }
 
 /**
- * Fuzzy match: ищем X-счёт, чьё имя пересекается с keywords.
- * Простой алгоритм: первое слово из имени счёта встречается в keywords
- * или одно из keywords входит в имя счёта.
+ * Fuzzy match по keywords правила.
+ *
+ * Используется в редакторе правила (когда нет конкретной транзакции).
+ * Ищет X-счёт, чьё имя пересекается с keywords.
  */
-function suggestAccountByKeywords(keywords: string[], accounts: any[]): any | null {
+export function suggestAccountByKeywords(keywords: string[], accounts: any[]): any | null {
   if (!keywords || keywords.length === 0) return null;
 
   const normalized = keywords.map(k => k.toLowerCase().trim()).filter(Boolean);
@@ -238,6 +248,56 @@ function suggestAccountByKeywords(keywords: string[], accounts: any[]): any | nu
 }
 
 /**
- * Публичная версия suggestAccountByKeywords — используется в engine.
+ * Fuzzy match по description конкретной транзакции.
+ *
+ * Используется в wizard (когда есть конкретная транзакция).
+ * Ищет X-счёт, чьё имя максимально пересекается со словами description.
+ * Исключает текущий счёт транзакции.
+ *
+ * Логика score:
+ *   +2 — точное совпадение целого слова
+ *   +1 — совпадение по стеммингу (обрезка окончаний)
+ * Tiebreaker: при равном score выбирается счёт с более коротким именем.
  */
-export { suggestAccountByKeywords };
+export function suggestAccountForEntity(entity: any, accounts: any[]): any | null {
+  const desc = String(entity.description || '').toLowerCase().trim();
+  if (!desc) return null;
+
+  const currentAccountId = entity.debit_account_id || entity.credit_account_id;
+  const descWords = desc.split(/\s+/).filter(w => w.length >= 4);
+  if (descWords.length === 0) return null;
+
+  let best: { account: any; score: number; nameLen: number } | null = null;
+
+  for (const acc of accounts) {
+    if (acc.type !== 'X') continue;
+    if (acc.id === currentAccountId) continue;
+
+    const accName = String(acc.name || '').toLowerCase().trim();
+    if (!accName) continue;
+
+    const accWords = accName.split(/\s+/).filter(w => w.length >= 4);
+    if (accWords.length === 0) continue;
+
+    let score = 0;
+    for (const accWord of accWords) {
+      if (descWords.includes(accWord)) {
+        score += 2;
+        continue;
+      }
+      const stem = accWord.length > 5 ? accWord.slice(0, accWord.length - 2) : accWord;
+      if (descWords.some(dw => dw.includes(stem) || stem.includes(dw))) {
+        score += 1;
+      }
+    }
+
+    if (score > 0) {
+      const nameLen = accName.length;
+      if (!best || score > best.score || (score === best.score && nameLen < best.nameLen)) {
+        best = { account: acc, score, nameLen };
+      }
+    }
+  }
+
+  return best?.account || null;
+}
