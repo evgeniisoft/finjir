@@ -196,23 +196,23 @@ export class ConsolidationEngine {
 
   /**
    * Исключение внутригрупповых операций
+   *
+   * ВНИМАНИЕ: полная логика ВГО не реализована — нет данных
+   * для определения «внутригрупповой» операции. Сейчас
+   * фильтр `!t.is_system` фактически ничего не исключает
+   * (все транзакции имеют is_system=null/false).
+   *
+   * Следствие: consolidatePnL = sum(calculatePnL).
+   * Проверки диагностики 4.4-4.8 фактически тавтологичны.
+   *
+   * TODO: реализовать ВГО (нужны: counterparty → company mapping,
+   *       либо отдельный флаг intercompany).
    */
   private excludeIntercompany(
     transactions: Transaction[],
     companies: Company[]
   ): Transaction[] {
-
-    const companyIds = new Set(companies.map(c => c.id));
-
-    // Фильтруем операции, где обе стороны внутри группы
-    return transactions.filter(t => {
-      // Если операция внутри одной компании — оставляем
-      // Если между компаниями холдинга — исключаем
-      // Для этого нужно знать, кто контрагент
-      // Пока упрощённо: исключаем если есть признак ВГО
-      return !t.is_system; // Потом уточним логику
-    });
+    return transactions.filter(t => !t.is_system);
   }
-}
 
 export const consolidationEngine = new ConsolidationEngine();
