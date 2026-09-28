@@ -1,100 +1,17 @@
 /**
  * ============================================
- * FinEngine 2026 - Data Quality
- * Базовые (seed) правила
+ * Data Quality — Seed
+ * Собирает все правила из категорий.
  * ============================================
  */
 
 import { DataQualityRule } from './types';
+import { SEED_CLASSIFICATION } from './seed-classification';
+import { SEED_COMPLETENESS } from './seed-completeness';
+import { SEED_FORMAT } from './seed-format';
 
 export const SEED_RULES: Partial<DataQualityRule>[] = [
-  {
-    name: 'Обучение не содержит "аренда"',
-    description: 'Оплаты на счёте «Обучение» не должны содержать «аренд» в описании',
-    category: 'classification',
-    rule_type: 'must_not_contain',
-    entity_type: 'Transactions',
-    target_field: 'description',
-    condition: { debit_account_id: 'acc-out-training' },
-    params: { keywords: ['аренд', 'зарплат', 'реклам', 'комисси'] },
-    severity: 'warning',
-    is_active: true,
-    auto_apply: false,
-  },
-  {
-    name: 'Логистика не содержит "реклама"',
-    description: 'На счёте «Логистика» не должно быть операций про рекламу',
-    category: 'classification',
-    rule_type: 'must_not_contain',
-    entity_type: 'Transactions',
-    target_field: 'description',
-    condition: { debit_account_id: 'acc-cogs-logistics' },
-    params: { keywords: ['реклам', 'аренд', 'обучен'] },
-    severity: 'warning',
-    is_active: true,
-    auto_apply: false,
-  },
-  {
-    name: 'Аренда офиса должна содержать "аренда"',
-    description: 'Счёт «Аренда офиса» — только для арендных платежей',
-    category: 'classification',
-    rule_type: 'must_contain',
-    entity_type: 'Transactions',
-    target_field: 'description',
-    condition: { debit_account_id: 'acc-out-rent-office' },
-    params: { keywords: ['аренд', 'офис'] },
-    severity: 'warning',
-    is_active: true,
-    auto_apply: false,
-  },
-  {
-    name: 'Маркетинг должен содержать "реклам/маркетинг"',
-    description: 'Счёт «Реклама» — только для маркетинговых операций',
-    category: 'classification',
-    rule_type: 'must_contain',
-    entity_type: 'Transactions',
-    target_field: 'description',
-    condition: { debit_account_id: 'acc-out-marketing' },
-    params: { keywords: ['реклам', 'маркетинг', 'промо'] },
-    severity: 'warning',
-    is_active: true,
-    auto_apply: false,
-  },
-  {
-    name: 'Банковские комиссии должны содержать "комиссия"',
-    description: 'Счёт «Банковские комиссии» — только для комиссий',
-    category: 'classification',
-    rule_type: 'must_contain',
-    entity_type: 'Transactions',
-    target_field: 'description',
-    condition: { debit_account_id: 'acc-out-bank-fees' },
-    params: { keywords: ['комисси'] },
-    severity: 'warning',
-    is_active: true,
-    auto_apply: false,
-  },
-  {
-    name: 'Описание обязательно для операционных расходов',
-    description: 'Для всех операционных расходов (acc-out-*) должно быть заполнено описание',
-    category: 'completeness',
-    rule_type: 'required_field',
-    entity_type: 'Transactions',
-    target_field: 'description',
-    condition: { debit_account_id_like: 'acc-out-%' },
-    severity: 'info',
-    is_active: true,
-    auto_apply: false,
-  },
-  {
-    name: 'Сумма больше нуля',
-    description: 'Все суммы в транзакциях должны быть положительными',
-    category: 'format',
-    rule_type: 'range',
-    entity_type: 'Transactions',
-    target_field: 'amount_rub',
-    params: { min: 0.01 },
-    severity: 'warning',
-    is_active: true,
-    auto_apply: false,
-  },
+  ...SEED_CLASSIFICATION,
+  ...SEED_COMPLETENESS,
+  ...SEED_FORMAT,
 ];
