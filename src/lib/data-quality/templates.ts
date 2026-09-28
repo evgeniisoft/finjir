@@ -202,27 +202,39 @@ export function defaultActionsForRule(
 function suggestAccountByKeywords(keywords: string[], accounts: any[]): any | null {
   if (!keywords || keywords.length === 0) return null;
 
-  const normalized = keywords.map(k => k.toLowerCase());
+  const normalized = keywords.map(k => k.toLowerCase().trim()).filter(Boolean);
+  if (normalized.length === 0) return null;
+
+  let best: { account: any; score: number; nameLen: number } | null = null;
 
   for (const acc of accounts) {
     if (acc.type !== 'X') continue;
-    const accName = String(acc.name || '').toLowerCase();
+    const accName = String(acc.name || '').toLowerCase().trim();
     if (!accName) continue;
 
-    // Первое слово имени счёта
-    const firstWord = accName.split(/\s+/)[0];
-    if (firstWord && normalized.some(k => k.includes(firstWord) || firstWord.includes(k))) {
-      return acc;
+    const accWords = accName.split(/\s+/).filter(w => w.length >= 3);
+    let score = 0;
+
+    for (const accWord of accWords) {
+      if (normalized.includes(accWord)) {
+        score += 2;
+        continue;
+      }
+      const stem = accWord.length > 5 ? accWord.slice(0, accWord.length - 2) : accWord;
+      if (normalized.some(kw => kw.includes(stem) || stem.includes(kw) || accWord.includes(kw) || kw.includes(accWord))) {
+        score += 1;
+      }
     }
 
-    // Любое слово из имени счёта
-    const words = accName.split(/\s+/).filter(w => w.length >= 3);
-    if (words.some(w => normalized.some(k => k.includes(w)))) {
-      return acc;
+    if (score > 0) {
+      const nameLen = accName.length;
+      if (!best || score > best.score || (score === best.score && nameLen < best.nameLen)) {
+        best = { account: acc, score, nameLen };
+      }
     }
   }
 
-  return null;
+  return best?.account || null;
 }
 
 /**
