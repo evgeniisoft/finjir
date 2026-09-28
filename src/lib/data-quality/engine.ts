@@ -133,10 +133,26 @@ export class DataQualityEngine {
       }
 
       case 'range': {
-        const num = parseFloat(String(value));
-        const min = params.min ?? -Infinity;
-        const max = params.max ?? Infinity;
-        isViolation = isNaN(num) || num < min || num > max;
+        // Проверяем: числовой диапазон или дата.
+        // Если target_field содержит 'date' — работаем как с датами.
+        if (rule.target_field.includes('date')) {
+          const valDate = new Date(String(value)).getTime();
+          let minDate = params.min;
+          let maxDate = params.max;
+
+          if (minDate === 'today') minDate = new Date().toISOString().split('T')[0];
+          if (maxDate === 'today') maxDate = new Date().toISOString().split('T')[0];
+
+          const minTime = minDate ? new Date(String(minDate)).getTime() : -Infinity;
+          const maxTime = maxDate ? new Date(String(maxDate)).getTime() : Infinity;
+
+          isViolation = isNaN(valDate) || valDate < minTime || valDate > maxTime;
+        } else {
+          const num = parseFloat(String(value));
+          const min = params.min ?? -Infinity;
+          const max = params.max ?? Infinity;
+          isViolation = isNaN(num) || num < min || num > max;
+        }
         break;
       }
 
