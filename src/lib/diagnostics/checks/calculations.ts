@@ -99,7 +99,6 @@ function checkCashFlowFormula(ctx: DiagnosticContext, company: any): DiagnosticC
       ctx.periodStart, ctx.periodEnd, company
     );
 
-    // ending_balance = start + in - out - tax_outflow
     const expected = cf.starting_balance
       + cf.operating_inflow - cf.operating_outflow
       + cf.investing_inflow - cf.investing_outflow
@@ -152,6 +151,9 @@ function checkCashFlowFormula(ctx: DiagnosticContext, company: any): DiagnosticC
 // ============================================
 // 3.3 Баланс: формула
 // ============================================
+// Проверяем, что assets.total = cash + ar + inventory + fixed_assets,
+// и liabilities.total = ap + loans + taxLiabilities (накопительно).
+// Раньше проверка была тавтологичной: equity вычислялся как assets - liabilities.
 function checkBalanceFormula(ctx: DiagnosticContext, company: any): DiagnosticCheck[] {
   const id = `calc_bs_${company.id}`;
   try {
@@ -160,27 +162,56 @@ function checkBalanceFormula(ctx: DiagnosticContext, company: any): DiagnosticCh
       ctx.periodEnd, company
     );
 
-    const expected = bs.liabilities.total + bs.equity.total;
-    const diff = Math.abs(expected - bs.assets.total);
+    // Проверка 1: assets.total = сумма компонентов
+    const expectedAssets = bs.assets.cash
+      + bs.assets.accounts_receivable
+      + bs.assets.inventory
+      + bs.assets.fixed_assets;
+    const assetsDiff = Math.abs(expectedAssets - bs.assets.total);
 
-    if (diff > THRESHOLD) {
+    if (assetsDiff > THRESHOLD) {
       return [problemCheck(
         id, LEVEL, CATEGORY, 'critical',
-        `Баланс: Активы = Пассивы + Капитал (${company.name})`,
-        `Баланс не сходится: активы ${bs.assets.total.toLocaleString('ru-RU')}, пассивы+капитал ${expected.toLocaleString('ru-RU')}`,
+        `Баланс: компоненты активов (${company.name})`,
+        `assets.total не сходится: cash+ar+inv+fa = ${expectedAssets.toLocaleString('ru-RU')}, assets.total = ${bs.assets.total.toLocaleString('ru-RU')}`,
         {
           entity: { type: 'company', id: company.id, name: company.name },
           comparison: {
             metric: 'assets_total',
-            expected_value: expected,
+            expected_value: expectedAssets,
             actual_value: bs.assets.total,
-            expected_source: 'liabilities.total + equity.total',
-            actual_source: 'assets.total',
-            difference: diff,
-            difference_percent: bs.assets.total > 0 ? (diff / bs.assets.total) * 100 : 0,
+            expected_source: 'cash + ar + inventory + fixed_assets',
+            actual_source: 'calculateBalanceSheet().assets.total',
+            difference: assetsDiff,
+            difference_percent: bs.assets.total > 0 ? (assetsDiff / bs.assets.total) * 100 : 0,
             threshold: THRESHOLD,
           },
-          reason: 'Баланс не сходится',
+          reason: 'Сумма компонентов активов не равна итогу',
+          recommendation: 'Проверьте calculator.calculateBalanceSheet',
+        }
+      )];
+    }
+
+    // Проверка 2: liabilities.total >= ap + loans
+    const minLiabilities = bs.liabilities.accounts_payable + bs.liabilities.loans;
+    if (bs.liabilities.total < minLiabilities - THRESHOLD) {
+      return [problemCheck(
+        id, LEVEL, CATEGORY, 'critical',
+        `Баланс: компоненты пассивов (${company.name})`,
+        `liabilities.total (${bs.liabilities.total.toLocaleString('ru-RU')}) меньше ap+loans (${minLiabilities.toLocaleString('ru-RU')})`,
+        {
+          entity: { type: 'company', id: company.id, name: company.name },
+          comparison: {
+            metric: 'liabilities_total',
+            expected_value: minLiabilities,
+            actual_value: bs.liabilities.total,
+            expected_source: 'accounts_payable + loans',
+            actual_source: 'calculateBalanceSheet().liabilities.total',
+            difference: Math.abs(minLiabilities - bs.liabilities.total),
+            difference_percent: 0,
+            threshold: THRESHOLD,
+          },
+          reason: 'Итог пассивов меньше суммы компонентов',
           recommendation: 'Проверьте calculator.calculateBalanceSheet',
         }
       )];
@@ -188,8 +219,8 @@ function checkBalanceFormula(ctx: DiagnosticContext, company: any): DiagnosticCh
 
     return [okCheck(
       id, LEVEL, CATEGORY,
-      `Баланс: Активы = Пассивы + Капитал (${company.name})`,
-      `Активы = ${bs.assets.total.toLocaleString('ru-RU')}`
+      `Баланс: формула (${company.name})`,
+      `Активы = ${bs.assets.total.toLocaleString('ru-RU')}, пассивы = ${bs.liabilities.total.toLocaleString('ru-RU')}`
     )];
   } catch (e: any) {
     return [problemCheck(
@@ -215,9 +246,11 @@ function checkTaxFormula(ctx: DiagnosticContext, company: any): DiagnosticCheck[
       ctx.periodStart, ctx.periodEnd
     );
 
-    // УСН 6%: налог = revenue × 0.06, уменьшенный на взносы (не более 50%)
+    // УСН 6%: налог = revenue × usn_6, уменьшенный на взносы (не более 50%)
+    // Ставка берётся из настроек, не хардкод
     if (company.tax_system === 'USN_6') {
-      const baseTax = tax.revenue_without_vat * 0.06;
+      const usnRate = parseFloat(String(ctx.settings['usn_6'] || '0.06'));
+      const baseTax = tax.revenue_without_vat * usnRate;
       const isIndividual = String(company.is_individual).toLowerCase() === 'true';
       const maxReduction = isIndividual ? baseTax : baseTax * 0.5;
       const expected = Math.max(baseTax - Math.min(tax.insurance_amount, maxReduction), 0);
@@ -234,7 +267,7 @@ function checkTaxFormula(ctx: DiagnosticContext, company: any): DiagnosticCheck[
               metric: 'income_tax_amount',
               expected_value: expected,
               actual_value: tax.income_tax_amount,
-              expected_source: 'revenue × 0.06 - взносы',
+              expected_source: `revenue × ${usnRate} - взносы`,
               actual_source: 'taxEngine.calculateTax',
               difference: diff,
               difference_percent: baseTax > 0 ? (diff / baseTax) * 100 : 0,
