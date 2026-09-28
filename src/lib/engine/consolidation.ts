@@ -194,7 +194,7 @@ export class ConsolidationEngine {
     return consolidated;
   }
 
-  /**
+    /**
    * Исключение внутригрупповых операций
    *
    * ВНИМАНИЕ: полная логика ВГО не реализована — нет данных
@@ -214,5 +214,6 @@ export class ConsolidationEngine {
   ): Transaction[] {
     return transactions.filter(t => !t.is_system);
   }
+}
 
 export const consolidationEngine = new ConsolidationEngine();
