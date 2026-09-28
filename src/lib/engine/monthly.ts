@@ -1,5 +1,6 @@
 import { Transaction, Account, Company } from "./types";
 import { taxEngine } from "./tax";
+import { isOpexAccount, isRevenueAccount } from "./opex-filter";
 
 export type PeriodType = "monthly" | "weekly" | "daily" | "quarterly";
 
@@ -36,21 +37,7 @@ export class MonthlyEngine {
         t.date >= periodStart &&
         t.date <= periodEnd,
     );
-    // Годовой taxCalc (для месячных периодов — единый расчёт)
-    let annualTaxCalc: any = null;
-    let annualTaxCalcYear: string = "";
-    if (company) {
-      annualTaxCalcYear = periodStart.substring(0, 4);
-      const yearStart = `${annualTaxCalcYear}-01-01`;
-      const yearEnd = `${annualTaxCalcYear}-12-31`;
-      annualTaxCalc = taxEngine.calculateTax(
-        company,
-        transactions,
-        accounts,
-        yearStart,
-        yearEnd,
-      );
-    }
+
     // Группируем по периодам
     const periodsMap = new Map<string, Transaction[]>();
 
@@ -146,7 +133,6 @@ export class MonthlyEngine {
           monthKey < firstPeriodMonth &&
           !monthsBeforeReport.includes(monthKey)
         ) {
-          // Проверяем, есть ли в этом месяце РЕАЛЬНАЯ выручка (счета типа 'I')
           const hasRevenue = transactions.some((tr) => {
             if (tr.company_id !== companyId) return false;
             const trDate =
@@ -214,6 +200,57 @@ export class MonthlyEngine {
 
     const reports: PeriodReport[] = [];
 
+    // ============ НАКОПИТЕЛЬНЫЙ РАСЧЁТ НАЛОГОВ ДЛЯ P&L ============
+    // Для каждого месяца считаем налог НАРАСТАЮЩИМ ИТОГОМ (янв → янв-фев → ...).
+    // monthlyTax[m] = cumulativeTax[янв..m] − cumulativeTax[янв..m-1].
+    // Тогда sum(monthlyTax) === годовой налог, и sumProfit === pnl.net_profit.
+    const cumulativeTaxByPeriod = new Map<string, any>();
+    if (reportType === "pnl" && company) {
+      let prevCumulative: any = null;
+      for (const period of sortedPeriods) {
+        const periodStartDate = this.getPeriodStartDate(period, periodType);
+        const periodEndDate = this.getPeriodEndDate(period, periodType);
+        // Начало года — от начала периода отчёта
+        const yearStart = periodStart.substring(0, 4) + "-01-01";
+        // Если periodStart не с начала года — берём как есть
+        const cumulativeStart = periodStart < yearStart ? periodStart : yearStart;
+
+        const cumulativeTax = taxEngine.calculateTax(
+          company,
+          transactions,
+          accounts,
+          cumulativeStart,
+          periodEndDate,
+        );
+
+        // Налог за период = накопленный − предыдущий накопленный
+        let monthlyIncomeTax: number;
+        let monthlyInsurance: number;
+        let monthlyNdf: number;
+
+        if (prevCumulative === null) {
+          monthlyIncomeTax = cumulativeTax.income_tax_amount;
+          monthlyInsurance = cumulativeTax.insurance_amount;
+          monthlyNdf = cumulativeTax.ndfl_amount;
+        } else {
+          monthlyIncomeTax = cumulativeTax.income_tax_amount - prevCumulative.income_tax_amount;
+          monthlyInsurance = cumulativeTax.insurance_amount - prevCumulative.insurance_amount;
+          monthlyNdf = cumulativeTax.ndfl_amount - prevCumulative.ndfl_amount;
+        }
+
+        cumulativeTaxByPeriod.set(period, {
+          cumulative: cumulativeTax,
+          monthly: {
+            income_tax_amount: monthlyIncomeTax,
+            insurance_amount: monthlyInsurance,
+            ndfl_amount: monthlyNdf,
+          },
+        });
+
+        prevCumulative = cumulativeTax;
+      }
+    }
+
     for (const period of sortedPeriods) {
       const periodTransactions = periodsMap.get(period) || [];
 
@@ -228,21 +265,18 @@ export class MonthlyEngine {
       const details: { [accountId: string]: number } = {};
 
       // Расчёт налогов для этого периода
+      // Для P&L — используем накопительный расчёт (выше)
+      // Для cashflow/balance — месячный (как было)
       let taxCalc: any = null;
       if (company) {
-        if (
-          periodType === "monthly" &&
-          annualTaxCalc &&
-          periodStart.startsWith(annualTaxCalcYear)
-        ) {
-          // Пересчитываем налоги от фактической зарплаты месяца
-          taxCalc = taxEngine.calculateTax(
-            company,
-            transactions,
-            accounts,
-            periodStartDate,
-            periodEndDate,
-          );
+        if (reportType === "pnl" && cumulativeTaxByPeriod.has(period)) {
+          const entry = cumulativeTaxByPeriod.get(period);
+          taxCalc = {
+            ...entry.cumulative,
+            income_tax_amount: entry.monthly.income_tax_amount,
+            insurance_amount: entry.monthly.insurance_amount,
+            ndfl_amount: entry.monthly.ndfl_amount,
+          };
         } else {
           taxCalc = taxEngine.calculateTax(
             company,
@@ -278,7 +312,6 @@ export class MonthlyEngine {
           const debitIsCash = Boolean(debitAccount.is_cash_flow);
           const creditIsCash = Boolean(creditAccount.is_cash_flow);
 
-          // Денежные счета
           if (debitIsCash) {
             details[debitAccount.id] =
               (details[debitAccount.id] || 0) + t.amount_rub;
@@ -288,7 +321,6 @@ export class MonthlyEngine {
               (details[creditAccount.id] || 0) - t.amount_rub;
           }
 
-          // Не денежные счета
           if (!debitIsCash && debitAccount.type === "A") {
             details[debitAccount.id] =
               (details[debitAccount.id] || 0) + t.amount_rub;
@@ -386,15 +418,9 @@ export class MonthlyEngine {
         const debitIsCash = Boolean(debitAccount.is_cash_flow);
         const creditIsCash = Boolean(creditAccount.is_cash_flow);
 
-        // Выручка
-        if (
-          creditAccount.type === "I" &&
-          creditAccount.activity_type === "operating" &&
-          !creditAccount.id.startsWith("acc-in-invest-") &&
-          creditAccount.id !== "acc-in-loan"
-        ) {
+        // Выручка — через единый фильтр isRevenueAccount
+        if (isRevenueAccount(creditAccount)) {
           let revenueAmount = t.amount_rub;
-          // Для ОСНО выделяем НДС
           const vatIncluded =
             String(company?.vat_included).toLowerCase() === "true";
           const vatRate = parseFloat(String(company?.vat_rate || "0"));
@@ -406,17 +432,8 @@ export class MonthlyEngine {
             (details[creditAccount.id] || 0) + revenueAmount;
         }
 
-        // Расходы — только для P&L
-        if (
-          reportType === "pnl" &&
-          debitAccount.type === "X" &&
-          debitAccount.activity_type === "operating" &&
-          !debitAccount.id.startsWith("acc-tax-") &&
-          !debitAccount.id.startsWith("acc-depreciation-") &&
-          debitAccount.id !== "acc-out-capex" &&
-          !debitAccount.id.startsWith("acc-out-loan-") &&
-          debitAccount.id !== "acc-out-dividends"
-        ) {
+        // Расходы — только для P&L, через единый фильтр isOpexAccount
+        if (reportType === "pnl" && isOpexAccount(debitAccount)) {
           let expenseAmount = t.amount_rub;
           const vatIncluded =
             String(company?.vat_included).toLowerCase() === "true";
@@ -461,16 +478,13 @@ export class MonthlyEngine {
       // Определяем месяц для periodType
       let monthNum = 0;
       if (periodType === "monthly" || periodType === "daily") {
-        // "2026-09" → 9, "2026-09-15" → 9
         monthNum = parseInt(period.substring(5, 7));
       } else if (periodType === "quarterly") {
-        // "2026-Q1" → 3 (конец 1 квартала), "2026-Q2" → 6
         const q = parseInt(period.split("-Q")[1]);
         monthNum = q * 3;
       } else if (periodType === "weekly") {
-        // "2026-W01" → берём месяц по первому дню недели
-        const periodStartDate = this.getPeriodStartDate(period, periodType);
-        monthNum = parseInt(periodStartDate.substring(5, 7));
+        const periodStartDate2 = this.getPeriodStartDate(period, periodType);
+        monthNum = parseInt(periodStartDate2.substring(5, 7));
       }
 
       const isQuarterEnd =
@@ -487,7 +501,6 @@ export class MonthlyEngine {
           details["acc-tax-insurance"] = taxCalc.insurance_amount || 0;
           details["acc-tax-ndfl"] = taxCalc.ndfl_amount || 0;
 
-          // Фикс. взносы ИП
           if (isIndividual && taxCalc.ip_fixed_amount) {
             details["acc-tax-ip"] = taxCalc.ip_fixed_amount;
           }
@@ -515,7 +528,6 @@ export class MonthlyEngine {
           details["acc-tax-insurance"] = taxCalc.insurance_amount;
           details["acc-tax-ndfl"] = taxCalc.ndfl_amount;
 
-          // Фикс. взносы ИП — из фактических транзакций acc-tax-ip
           if (isIndividual && taxCalc.ip_fixed_amount) {
             details["acc-tax-ip"] = taxCalc.ip_fixed_amount;
           }
@@ -539,7 +551,6 @@ export class MonthlyEngine {
             details["acc-tax-profit"] = 0;
           }
 
-          // Детализация налоговых выбытий
           details["tax_insurance"] = taxCalc.insurance_amount || 0;
           details["tax_ndfl"] = taxCalc.ndfl_amount || 0;
           details["tax_vat"] = isQuarterEnd ? taxCalc.vat_to_pay : 0;
@@ -620,7 +631,6 @@ export class MonthlyEngine {
       case "monthly":
         return `${period}-01`;
       case "quarterly": {
-        // period = "2026-Q1" | "2026-Q2" | "2026-Q3" | "2026-Q4"
         const [year, q] = period.split("-Q");
         const quarter = parseInt(q);
         const startMonth = (quarter - 1) * 3 + 1;
@@ -646,7 +656,6 @@ export class MonthlyEngine {
         return `${period}-${String(lastDay).padStart(2, "0")}`;
       }
       case "quarterly": {
-        // period = "2026-Q1"
         const [year, q] = period.split("-Q");
         const quarter = parseInt(q);
         const endMonth = quarter * 3;
