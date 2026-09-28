@@ -29,7 +29,9 @@ export async function GET(request: NextRequest) {
 
     loadSystemAccounts(settings);
 
-    // Фильтруем бюджеты
+    // Фильтруем бюджеты (ПЛАН)
+    // Логика: по умолчанию — все компании (консолидированный бюджет),
+    // при передаче company_id — только по выбранной компании.
     let filteredBudgets = budgets.filter((b: any) => b.scenario === scenario);
 
     if (companyId) {
@@ -50,9 +52,19 @@ export async function GET(request: NextRequest) {
       filteredBudgets = Array.from(aggregated.values());
     }
 
-    // Считаем факт по месяцам
+    // Считаем ФАКТ по месяцам.
+    //
+    // ВАЖНО:
+    // 1. Берём только record_type === 'fact'. План (record_type === 'plan')
+    //    в факт не подмешиваем — иначе ретроспективный анализ искажается.
+    // 2. Если companyId передан — фильтруем по компании, чтобы факт был
+    //    сопоставим с планом (план тоже фильтруется по company_id выше).
+    //    Пустая строка ('' — «Все компании») фильтр не применяет.
     const actualsByCategory = new Map<string, Map<string, number>>();
     for (const tx of transactions) {
+      if (tx.record_type !== 'fact') continue;
+      if (companyId && tx.company_id !== companyId) continue;
+
       const txDate = typeof tx.date === 'string'
         ? tx.date.split('T')[0]
         : new Date(tx.date).toISOString().split('T')[0];
