@@ -3,6 +3,48 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 
+// ============================================
+// Правила цветов (единые для БДР и БДДС)
+// ============================================
+// Доход (I):  actual >= planned → зелёный, иначе красный
+// Расход (X): actual <= planned → зелёный, иначе красный
+// Отклонение: доход dev >= 0 → зелёный; расход dev <= 0 → зелёный
+// ============================================
+
+function getActualColor(
+  accountType: 'I' | 'X',
+  actual: number,
+  planned: number
+): string {
+  if (planned === 0 && actual === 0) return 'text-gray-400';
+  if (planned === 0 && actual > 0) {
+    // Факт без плана: доход — хорошо, расход — плохо
+    return accountType === 'I' ? 'text-green-600' : 'text-red-600';
+  }
+  if (accountType === 'I') {
+    return actual >= planned ? 'text-green-600' : 'text-red-600';
+  }
+  return actual <= planned ? 'text-green-600' : 'text-red-600';
+}
+
+function getDeviationColor(accountType: 'I' | 'X', dev: number): string {
+  if (dev === 0) return 'text-gray-500';
+  if (accountType === 'I') {
+    return dev >= 0 ? 'text-green-600' : 'text-red-600';
+  }
+  return dev <= 0 ? 'text-green-600' : 'text-red-600';
+}
+
+function getDeviation(actual: number, planned: number): number {
+  if (planned === 0) return 0;
+  return ((actual - planned) / planned) * 100;
+}
+
+const monthNamesRu = [
+  'Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн',
+  'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек',
+];
+
 export default function PlanningPage() {
   const [budgets, setBudgets] = useState<any[]>([]);
   const [actualsByCategory, setActualsByCategory] = useState<{ [key: string]: { [key: string]: number } }>({});
@@ -18,6 +60,7 @@ export default function PlanningPage() {
   const [editValue, setEditValue] = useState('');
   const [viewMode, setViewMode] = useState<'plan' | 'actual' | 'deviation'>('plan');
   const [budgetType, setBudgetType] = useState<'pnl' | 'cashflow'>('pnl');
+  const [horizon, setHorizon] = useState<'rolling' | 'year'>('rolling');
 
   useEffect(() => {
     loadData();
@@ -39,8 +82,7 @@ export default function PlanningPage() {
       const balanceArray = Array.isArray(balanceData) ? balanceData : [];
       const cash = balanceArray.reduce((sum, b) => sum + (b.report?.assets?.cash || 0), 0);
       setTotalCash(cash);
-      setCompanies(companiesData);
-      setAccounts(accountsData);
+
       // Загружаем отсрочки
       const settingsRes = await fetch('/api/data?action=getAll&sheet=Settings');
       const settingsData = await settingsRes.json();
@@ -152,6 +194,7 @@ export default function PlanningPage() {
       setSavingCell(false);
     }
   };
+
   const handleCloseMonth = async () => {
     if (!selectedCompany) {
       alert('Выберите компанию');
@@ -193,6 +236,7 @@ export default function PlanningPage() {
       setLoading(false);
     }
   };
+
   const groupedAccounts = () => {
     if (budgetType === 'cashflow') {
       // Для БДДС — все счета, группируем по activity_type
@@ -233,34 +277,43 @@ export default function PlanningPage() {
     }
     return groups;
   };
-  const months: string[] = [];
-  const monthNames: string[] = [];
-  const monthNamesRu = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
-  const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    months.push(`${y}-${m}`);
-    monthNames.push(`${monthNamesRu[date.getMonth()]} ${String(y).substring(2)}`);
-  }
+  // ============================================
+  // Построение месяцев по горизонту
+  // ============================================
+  const buildMonths = (): { months: string[]; monthNames: string[] } => {
+    const now = new Date();
+    const list: string[] = [];
+    const names: string[] = [];
+
+    if (horizon === 'rolling') {
+      // Скользящее планирование: 12 месяцев вперёд от текущего
+      for (let i = 0; i < 12; i++) {
+        const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        list.push(`${y}-${m}`);
+        names.push(`${monthNamesRu[date.getMonth()]} ${String(y).substring(2)}`);
+      }
+    } else {
+      // Текущий год: январь–декабрь selectedYear
+      const y = parseInt(selectedYear);
+      for (let m = 0; m < 12; m++) {
+        list.push(`${y}-${String(m + 1).padStart(2, '0')}`);
+        names.push(`${monthNamesRu[m]} ${String(y).substring(2)}`);
+      }
+    }
+
+    return { months: list, monthNames: names };
+  };
+
+  const { months, monthNames } = buildMonths();
 
   // Группируем бюджеты по статьям
   const budgetByCategory = new Map<string, Map<string, { amount: number, id: string, status: string, company_id: string }>>();
   for (const budget of budgets) {
     const catId = budget.category_id || budget.account_id;
     const rawPeriod = String(budget.period || '');
-
-    let month = '';
-
-    if (rawPeriod.includes('T')) {
-      const date = new Date(rawPeriod);
-      const localDate = new Date(date.getTime() + 3 * 60 * 60 * 1000);
-      month = localDate.toISOString().substring(5, 7);
-    } else {
-      month = rawPeriod.replace(/^'/, '').substring(5, 7);
-    }
 
     if (!budgetByCategory.has(catId)) {
       budgetByCategory.set(catId, new Map());
@@ -272,6 +325,7 @@ export default function PlanningPage() {
       company_id: budget.company_id
     });
   }
+
   // Кэш: Компания -> Статья -> Месяц -> Сумма
   const rawBudgetsMap = new Map<string, Map<string, Map<string, number>>>();
   budgets.forEach((b: any) => {
@@ -292,6 +346,7 @@ export default function PlanningPage() {
 
     accMap.set(month, (accMap.get(month) || 0) + amount);
   });
+
   // Функция получения суммы с учётом отсрочки
   const getShiftedAmount = (accountId: string, targetMonth: string): number => {
     const companiesList = selectedCompany && selectedCompany !== 'all'
@@ -317,6 +372,105 @@ export default function PlanningPage() {
     return totalShiftedAmount;
   };
 
+  // ============================================
+  // Рендер ячейки БДДС (план / факт / отклонение)
+  // ============================================
+  const renderCashflowCell = (acc: any, m: string, accountType: 'I' | 'X') => {
+    const planned = getShiftedAmount(acc.id, m);
+    const actual = actualsByCategory[acc.id]?.[m] || 0;
+
+    if (viewMode === 'plan') {
+      if (!planned) {
+        return <span className="text-gray-400">—</span>;
+      }
+      const sign = accountType === 'X' ? '-' : '';
+      const color = accountType === 'X' ? 'text-red-600' : 'text-green-600';
+      return <span className={color}>{sign}{Math.round(planned).toLocaleString('ru-RU')}</span>;
+    }
+
+    if (viewMode === 'actual') {
+      if (!actual) {
+        return <span className="text-gray-400">—</span>;
+      }
+      const sign = accountType === 'X' ? '-' : '';
+      const color = getActualColor(accountType, actual, planned);
+      return <span className={color}>{sign}{Math.round(actual).toLocaleString('ru-RU')}</span>;
+    }
+
+    // deviation
+    if (!planned && !actual) {
+      return <span className="text-gray-400">—</span>;
+    }
+    if (!planned) {
+      return <span className="text-gray-500">н/д</span>;
+    }
+    const dev = getDeviation(actual, planned);
+    const color = getDeviationColor(accountType, dev);
+    return <span className={color}>{dev > 0 ? '+' : ''}{dev.toFixed(1)}%</span>;
+  };
+
+  // ============================================
+  // Рендер ячейки БДР (план + факт/отклонение под ним)
+  // ============================================
+  const renderPnlCell = (acc: any, m: string, accountType: 'I' | 'X') => {
+    const cellData = budgetByCategory.get(acc.id)?.get(m);
+    const planned = cellData?.amount || 0;
+    const actual = actualsByCategory[acc.id]?.[m] || 0;
+    const isEditable = horizon === 'rolling' && viewMode === 'plan' && !cellData?.status?.includes('closed');
+
+    // Режим редактирования
+    if (editingCell?.categoryId === acc.id && editingCell?.month === m) {
+      return (
+        <div className="flex items-center justify-end gap-1">
+          <input
+            type="number"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveCell();
+              if (e.key === 'Escape') setEditingCell(null);
+            }}
+            className="w-24 px-2 py-1 border border-blue-500 rounded text-right"
+            autoFocus
+          />
+          <button
+            onClick={(e) => { e.stopPropagation(); handleSaveCell(); }}
+            disabled={savingCell}
+            className="p-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+          >
+            {savingCell ? '...' : '✓'}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setEditingCell(null); }}
+            className="p-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+          >
+            ✕
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <div className="font-medium">
+          {planned ? Math.round(planned).toLocaleString('ru-RU') : '—'}
+        </div>
+        {viewMode === 'actual' && actual > 0 && (
+          <div className={`text-xs ${getActualColor(accountType, actual, planned)}`}>
+            {Math.round(actual).toLocaleString('ru-RU')}
+          </div>
+        )}
+        {viewMode === 'deviation' && planned > 0 && actual > 0 && (
+          <div className={`text-xs ${getDeviationColor(accountType, getDeviation(actual, planned))}`}>
+            {getDeviation(actual, planned) > 0 ? '+' : ''}
+            {getDeviation(actual, planned).toFixed(1)}%
+          </div>
+        )}
+        {cellData?.status === 'closed' && <div className="text-xs text-gray-500 mt-1">✓ закрыт</div>}
+      </div>
+    );
+  };
+
   return (
     <div>
       <div className="mb-8 flex items-center justify-between">
@@ -326,16 +480,28 @@ export default function PlanningPage() {
         </div>
         <div className="flex flex-col gap-3">
           <div className="flex gap-2 items-center">
-            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
               <option value="2026">2026</option>
               <option value="2027">2027</option>
             </select>
-            <select value={selectedScenario} onChange={(e) => setSelectedScenario(e.target.value as any)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <select
+              value={selectedScenario}
+              onChange={(e) => setSelectedScenario(e.target.value as any)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
               <option value="base">Базовый</option>
               <option value="optimistic">Оптимистичный</option>
               <option value="pessimistic">Пессимистичный</option>
             </select>
-            <select value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <select
+              value={selectedCompany}
+              onChange={(e) => setSelectedCompany(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
               <option value="">Все компании</option>
               {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -350,6 +516,22 @@ export default function PlanningPage() {
               className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
             >
               Закрыть месяц
+            </button>
+          </div>
+
+          {/* Горизонт: скользящий / текущий год */}
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+            <button
+              onClick={() => setHorizon('rolling')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${horizon === 'rolling' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+            >
+              Скользящий (12 мес)
+            </button>
+            <button
+              onClick={() => setHorizon('year')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${horizon === 'year' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+            >
+              Текущий год
             </button>
           </div>
 
@@ -481,21 +663,11 @@ export default function PlanningPage() {
                               {inflowAccounts.map((acc: any) => (
                                 <tr key={acc.id} className="hover:bg-gray-50">
                                   <td className="px-4 py-3 text-sm text-gray-600 sticky left-0 bg-white">{acc.name}</td>
-                                  {months.map((m: string) => {
-                                    let amount = 0;
-
-                                    if (budgetType === 'cashflow') {
-                                      amount = getShiftedAmount(acc.id, m);
-                                    } else {
-                                      amount = budgetByCategory.get(acc.id)?.get(m)?.amount || 0;
-                                    }
-
-                                    return (
-                                      <td key={m} className="px-4 py-3 text-sm text-right text-green-600 whitespace-nowrap">
-                                        {amount ? Math.round(amount).toLocaleString('ru-RU') : '—'}
-                                      </td>
-                                    );
-                                  })}
+                                  {months.map((m: string) => (
+                                    <td key={m} className="px-4 py-3 text-sm text-right whitespace-nowrap">
+                                      {renderCashflowCell(acc, m, 'I')}
+                                    </td>
+                                  ))}
                                 </tr>
                               ))}
                             </>
@@ -512,21 +684,11 @@ export default function PlanningPage() {
                               {outflowAccounts.map((acc: any) => (
                                 <tr key={acc.id} className="hover:bg-gray-50">
                                   <td className="px-4 py-3 text-sm text-gray-600 sticky left-0 bg-white">{acc.name}</td>
-                                  {months.map((m: string) => {
-                                    let amount = 0;
-
-                                    if (budgetType === 'cashflow') {
-                                      amount = getShiftedAmount(acc.id, m);
-                                    } else {
-                                      amount = budgetByCategory.get(acc.id)?.get(m)?.amount || 0;
-                                    }
-
-                                    return (
-                                      <td key={m} className="px-4 py-3 text-sm text-right text-red-600 whitespace-nowrap">
-                                        {amount ? '-' + Math.round(amount).toLocaleString('ru-RU') : '—'}
-                                      </td>
-                                    );
-                                  })}
+                                  {months.map((m: string) => (
+                                    <td key={m} className="px-4 py-3 text-sm text-right whitespace-nowrap">
+                                      {renderCashflowCell(acc, m, 'X')}
+                                    </td>
+                                  ))}
                                 </tr>
                               ))}
                             </>
@@ -534,7 +696,8 @@ export default function PlanningPage() {
                         </React.Fragment>
                       );
                     })}
-                    {/* Подытоги по секциям с учётом отсрочек */}
+
+                    {/* Подытоги по секциям */}
                     {[
                       { key: 'operating', label: 'ОПЕРАЦИОННАЯ ДЕЯТЕЛЬНОСТЬ' },
                       { key: 'investing', label: 'ИНВЕСТИЦИОННАЯ ДЕЯТЕЛЬНОСТЬ' },
@@ -585,7 +748,7 @@ export default function PlanningPage() {
                       );
                     })}
 
-                    {/* Чистый денежный поток с учётом отсрочек */}
+                    {/* Чистый денежный поток */}
                     <tr className="bg-gray-100">
                       <td className="px-4 py-3 text-sm font-semibold text-gray-900 sticky left-0 bg-gray-100">Чистый денежный поток</td>
                       {months.map((m: string) => {
@@ -616,13 +779,13 @@ export default function PlanningPage() {
                         );
                       })}
                     </tr>
-                    {/* Остаток на конец — кумулятивный с учётом отсрочек */}
+
+                    {/* Остаток на конец */}
                     <tr className="bg-blue-100">
                       <td className="px-4 py-3 text-sm font-semibold text-gray-900 sticky left-0 bg-blue-100">Остаток на конец</td>
                       {months.map((m: string, idx: number) => {
                         let balance = totalCash;
 
-                        // Суммируем потоки с начала горизонта до текущего месяца
                         for (let i = 0; i <= idx; i++) {
                           const currentMonth = months[i];
                           let mInflow = 0;
@@ -676,54 +839,25 @@ export default function PlanningPage() {
                               <td className="px-4 py-3 text-sm font-medium text-gray-900 sticky left-0 bg-white">{acc.name}</td>
                               {months.map((m: string) => {
                                 const cellData = budgetByCategory.get(acc.id)?.get(m);
-                                const amount = cellData?.amount;
+                                const isEditable = horizon === 'rolling' && viewMode === 'plan' && cellData?.status !== 'closed';
                                 return (
-                                  <td key={m}
-                                    className={`px-4 py-3 text-sm text-right whitespace-nowrap ${cellData?.status === 'closed'
-                                      ? 'bg-gray-100 cursor-not-allowed text-gray-500'
-                                      : selectedCompany && viewMode === 'plan'
-                                        ? 'text-gray-900 cursor-pointer hover:bg-blue-50'
-                                        : 'text-gray-400'
-                                      }`}
+                                  <td
+                                    key={m}
+                                    className={`px-4 py-3 text-sm text-right whitespace-nowrap ${
+                                      cellData?.status === 'closed'
+                                        ? 'bg-gray-100 cursor-not-allowed text-gray-500'
+                                        : isEditable && selectedCompany
+                                          ? 'text-gray-900 cursor-pointer hover:bg-blue-50'
+                                          : 'text-gray-400'
+                                    }`}
                                     onClick={() => {
-                                      if (viewMode !== 'plan') return;
-                                      if (cellData?.status === 'closed') return;
+                                      if (!isEditable) return;
                                       if (!selectedCompany) { alert('Выберите компанию'); return; }
                                       setEditingCell({ categoryId: acc.id, month: m });
-                                      setEditValue(amount ? amount.toString() : '');
-                                    }}>
-                                    {editingCell?.categoryId === acc.id && editingCell?.month === m ? (
-                                      <div className="flex items-center justify-end gap-1">
-                                        <input type="number" value={editValue} onChange={(e) => setEditValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSaveCell(); if (e.key === 'Escape') setEditingCell(null); }} className="w-24 px-2 py-1 border border-blue-500 rounded text-right" autoFocus />
-                                        <button onClick={(e) => { e.stopPropagation(); handleSaveCell(); }} disabled={savingCell} className="p-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">{savingCell ? '...' : '✓'}</button>
-                                        <button onClick={(e) => { e.stopPropagation(); setEditingCell(null); }} className="p-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300">✕</button>
-                                      </div>
-                                    ) : (
-                                      (() => {
-                                        const actual = actualsByCategory[acc.id]?.[m] || 0;
-                                        const planned = amount || 0;
-                                        const dev = planned && actual ? ((actual - planned) / planned) * 100 : 0;
-                                        const isGood = dev <= 0;
-                                        return (
-                                          <div>
-                                            <div className="font-medium">
-                                              {planned ? Math.round(planned).toLocaleString('ru-RU') : '—'}
-                                            </div>
-                                            {viewMode === 'actual' && actual > 0 && (
-                                              <div className={`text-xs ${actual <= planned ? 'text-green-600' : 'text-red-600'}`}>
-                                                {Math.round(actual).toLocaleString('ru-RU')}
-                                              </div>
-                                            )}
-                                            {viewMode === 'deviation' && planned && actual && (
-                                              <div className={`text-xs ${isGood ? 'text-green-600' : 'text-red-600'}`}>
-                                                {dev > 0 ? '+' : ''}{dev.toFixed(1)}%
-                                              </div>
-                                            )}
-                                            {cellData?.status === 'closed' && <div className="text-xs text-gray-500 mt-1">✓ закрыт</div>}
-                                          </div>
-                                        );
-                                      })()
-                                    )}
+                                      setEditValue(cellData?.amount ? cellData.amount.toString() : '');
+                                    }}
+                                  >
+                                    {renderPnlCell(acc, m, 'I')}
                                   </td>
                                 );
                               })}
@@ -735,54 +869,25 @@ export default function PlanningPage() {
                               <td className="px-4 py-3 text-sm text-gray-600 sticky left-0 bg-white">{acc.name}</td>
                               {months.map((m: string) => {
                                 const cellData = budgetByCategory.get(acc.id)?.get(m);
-                                const amount = cellData?.amount;
+                                const isEditable = horizon === 'rolling' && viewMode === 'plan' && cellData?.status !== 'closed';
                                 return (
-                                  <td key={m}
-                                    className={`px-4 py-3 text-sm text-right whitespace-nowrap ${cellData?.status === 'closed'
-                                      ? 'bg-gray-100 cursor-not-allowed text-gray-500'
-                                      : selectedCompany && viewMode === 'plan'
-                                        ? 'text-red-600 cursor-pointer hover:bg-blue-50'
-                                        : 'text-gray-400'
-                                      }`}
+                                  <td
+                                    key={m}
+                                    className={`px-4 py-3 text-sm text-right whitespace-nowrap ${
+                                      cellData?.status === 'closed'
+                                        ? 'bg-gray-100 cursor-not-allowed text-gray-500'
+                                        : isEditable && selectedCompany
+                                          ? 'text-red-600 cursor-pointer hover:bg-blue-50'
+                                          : 'text-gray-400'
+                                    }`}
                                     onClick={() => {
-                                      if (viewMode !== 'plan') return;
-                                      if (cellData?.status === 'closed') return;
+                                      if (!isEditable) return;
                                       if (!selectedCompany) { alert('Выберите компанию'); return; }
                                       setEditingCell({ categoryId: acc.id, month: m });
-                                      setEditValue(amount ? amount.toString() : '');
-                                    }}>
-                                    {editingCell?.categoryId === acc.id && editingCell?.month === m ? (
-                                      <div className="flex items-center justify-end gap-1">
-                                        <input type="number" value={editValue} onChange={(e) => setEditValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSaveCell(); if (e.key === 'Escape') setEditingCell(null); }} className="w-24 px-2 py-1 border border-blue-500 rounded text-right" autoFocus />
-                                        <button onClick={(e) => { e.stopPropagation(); handleSaveCell(); }} disabled={savingCell} className="p-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">{savingCell ? '...' : '✓'}</button>
-                                        <button onClick={(e) => { e.stopPropagation(); setEditingCell(null); }} className="p-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300">✕</button>
-                                      </div>
-                                    ) : (
-                                      (() => {
-                                        const actual = actualsByCategory[acc.id]?.[m] || 0;
-                                        const planned = amount || 0;
-                                        const dev = planned && actual ? ((actual - planned) / planned) * 100 : 0;
-                                        const isGood = dev >= 0;
-                                        return (
-                                          <div>
-                                            <div className="font-medium">
-                                              {planned ? Math.round(planned).toLocaleString('ru-RU') : '—'}
-                                            </div>
-                                            {viewMode === 'actual' && actual > 0 && (
-                                              <div className={`text-xs ${actual >= planned ? 'text-green-600' : 'text-red-600'}`}>
-                                                {Math.round(actual).toLocaleString('ru-RU')}
-                                              </div>
-                                            )}
-                                            {viewMode === 'deviation' && planned && actual && (
-                                              <div className={`text-xs ${isGood ? 'text-green-600' : 'text-red-600'}`}>
-                                                {dev > 0 ? '+' : ''}{dev.toFixed(1)}%
-                                              </div>
-                                            )}
-                                            {cellData?.status === 'closed' && <div className="text-xs text-gray-500 mt-1">✓ закрыт</div>}
-                                          </div>
-                                        );
-                                      })()
-                                    )}
+                                      setEditValue(cellData?.amount ? cellData.amount.toString() : '');
+                                    }}
+                                  >
+                                    {renderPnlCell(acc, m, 'X')}
                                   </td>
                                 );
                               })}
