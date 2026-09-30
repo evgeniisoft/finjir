@@ -25,6 +25,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [usnLimits, setUsnLimits] = useState<any[]>([]);
+  const [forecast, setForecast] = useState<any>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
 
   const defaultPeriod = getPeriodRange("month");
   const [period, setPeriod] = useState({
@@ -78,6 +80,27 @@ export default function Dashboard() {
       const usnLimitsRes = await fetch("/api/reports/usn-limits");
       const usnLimitsData = await usnLimitsRes.json();
       setUsnLimits(Array.isArray(usnLimitsData) ? usnLimitsData : []);
+
+      // Загружаем прогноз кассовых разрывов на 30 дней (консолидированно)
+      try {
+        setForecastLoading(true);
+        const today = new Date().toISOString().split("T")[0];
+        const forecastRes = await fetch(
+          `/api/reports/cashflow-forecast?start_date=${today}&horizon_days=30&view=consolidated`,
+        );
+        if (forecastRes.ok) {
+          const forecastData = await forecastRes.json();
+          setForecast(forecastData.consolidated || null);
+        } else {
+          setForecast(null);
+        }
+      } catch (e) {
+        console.error("Ошибка загрузки прогноза:", e);
+        setForecast(null);
+      } finally {
+        setForecastLoading(false);
+      }
+
       setError(null);
     } catch (err) {
       setError("Ошибка при загрузке данных");
@@ -182,28 +205,7 @@ export default function Dashboard() {
         ]
       : [];
 
-  const gaps: any[] = [];
-  let runningBalance = totalCash;
-  const cashGapForecastDays = parseInt(
-    process.env.NEXT_PUBLIC_CASH_GAP_DAYS || "30",
-  );
-  for (let i = 0; i < cashGapForecastDays; i++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() + i);
-    const dateStr = date.toISOString().split("T")[0];
-    const dayTx = transactions.filter((t) =>
-      getDateStr(t.date).startsWith(dateStr),
-    );
-    const inflow = dayTx
-      .filter((t) => t.type === "income")
-      .reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-    const outflow = dayTx
-      .filter((t) => t.type === "expense")
-      .reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-    runningBalance += inflow - outflow;
-    if (runningBalance < 0)
-      gaps.push({ date: dateStr, deficit: Math.abs(runningBalance) });
-  }
+  
 
   const periodTx = transactions.filter((t) => {
     const d = getDateStr(t.date);
@@ -904,23 +906,85 @@ export default function Dashboard() {
             </div>
           </Widget>
           <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <h3 className="font-semibold text-gray-900 mb-2">
-              Кассовые разрывы (30 дней)
-            </h3>
-            {gaps.length === 0 ? (
-              <p className="text-green-600">Нет разрывов</p>
-            ) : (
-              gaps.slice(0, 5).map((gap, idx) => (
-                <div
-                  key={idx}
-                  className="flex justify-between text-sm text-red-600 py-1"
-                >
-                  <span>{formatDay(gap.date)}</span>
-                  <span>
-                    -{Number(gap.deficit || 0).toLocaleString("ru-RU")} ₽
-                  </span>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">
+                Кассовые разрывы (30 дней)
+              </h3>
+              <a
+                href="/reports?tab=gaps"
+                className="text-xs text-blue-600 hover:text-blue-700"
+              >
+                Подробнее →
+              </a>
+            </div>
+
+            {forecastLoading ? (
+              <p className="text-sm text-gray-500">Загрузка прогноза...</p>
+            ) : !forecast ? (
+              <p className="text-sm text-gray-500">
+                Не удалось загрузить прогноз
+              </p>
+            ) : forecast.gaps.length === 0 ? (
+              <>
+                <p className="text-green-600 font-medium mb-2">
+                  ✅ Нет разрывов
+                </p>
+                <div className="text-xs text-gray-500 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Остаток на начало</span>
+                    <span className="font-medium text-gray-900">
+                      {Math.round(forecast.starting_balance).toLocaleString(
+                        "ru-RU",
+                      )}{" "}
+                      ₽
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Остаток на конец</span>
+                    <span className="font-medium text-gray-900">
+                      {Math.round(forecast.ending_balance).toLocaleString(
+                        "ru-RU",
+                      )}{" "}
+                      ₽
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Выбытия за 30 дней</span>
+                    <span className="font-medium text-red-600">
+                      −
+                      {Math.round(forecast.total_outflow).toLocaleString(
+                        "ru-RU",
+                      )}{" "}
+                      ₽
+                    </span>
+                  </div>
                 </div>
-              ))
+              </>
+            ) : (
+              <>
+                <p className="text-red-600 font-medium mb-2">
+                  ⚠ {forecast.gaps.length}{" "}
+                  {forecast.gaps.length === 1 ? "разрыв" : "разрывов"}
+                </p>
+                <div className="space-y-1">
+                  {forecast.gaps.slice(0, 5).map((gap: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="flex justify-between text-sm text-red-600 py-1"
+                    >
+                      <span className="text-xs">{gap.date}</span>
+                      <span className="font-medium">
+                        −{Math.round(gap.max_deficit).toLocaleString("ru-RU")} ₽
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {forecast.gaps.length > 5 && (
+                  <p className="text-xs text-gray-400 mt-2 text-center">
+                    и ещё {forecast.gaps.length - 5}...
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
