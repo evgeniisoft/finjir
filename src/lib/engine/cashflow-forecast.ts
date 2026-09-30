@@ -493,15 +493,12 @@ export class CashflowForecastEngine {
             );
           }
 
-          // Текущий квартал = последний накопительный − предыдущие накопительные
+          // Текущий квартал = накопительный до конца квартала
+          //                   − накопительный до конца ПРЕДЫДУЩЕГО квартала.
           const cumulativeCurrent = cumulativeTaxes[cumulativeTaxes.length - 1];
-          const cumulativePrev = cumulativeTaxes.slice(0, -1).reduce(
-            (acc, t) => ({
-              vat_to_pay: acc.vat_to_pay + t.vat_to_pay,
-              income_tax_amount: acc.income_tax_amount + t.income_tax_amount,
-            }),
-            { vat_to_pay: 0, income_tax_amount: 0 },
-          );
+          const cumulativePrev = cumulativeTaxes.length > 1
+            ? cumulativeTaxes[cumulativeTaxes.length - 2]
+            : { vat_to_pay: 0, income_tax_amount: 0 };
 
           const quarterVat = Math.max(0, cumulativeCurrent.vat_to_pay - cumulativePrev.vat_to_pay);
           const quarterIncomeTax = Math.max(0, cumulativeCurrent.income_tax_amount - cumulativePrev.income_tax_amount);
