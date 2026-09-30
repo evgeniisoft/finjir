@@ -15,6 +15,7 @@ import RuleEditor from './rule-editor';
 
 export default function RulesPage() {
   const [rules, setRules] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any | null>(null);
   const [creating, setCreating] = useState(false);
@@ -24,7 +25,12 @@ export default function RulesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      setRules(await fetchRules());
+      const [rulesData, accountsRes] = await Promise.all([
+        fetchRules(),
+        fetch('/api/data?action=getAll&sheet=Accounts').then(r => r.json()),
+      ]);
+      setRules(rulesData);
+      setAccounts(Array.isArray(accountsRes) ? accountsRes : []);
     } finally {
       setLoading(false);
     }
@@ -177,6 +183,7 @@ export default function RulesPage() {
           rule={editing}
           onSave={handleSave}
           onCancel={() => { setEditing(null); setCreating(false); }}
+          accounts={accounts}
         />
       )}
     </div>
