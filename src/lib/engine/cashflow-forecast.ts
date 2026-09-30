@@ -129,6 +129,19 @@ function getLastDayOfMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+const MONTH_NAMES_RU_SHORT = [
+  'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+  'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+];
+
+function formatMonthRu(month: string): string {
+  // month = "2026-09"
+  const [y, m] = month.split('-');
+  const idx = parseInt(m, 10) - 1;
+  if (idx < 0 || idx > 11) return month;
+  return `${MONTH_NAMES_RU_SHORT[idx]} ${y}`;
+}
+
 /**
  * Дата уплаты налога: следующий месяц(ы) после месяца начисления,
  * указанный день (или последний день месяца, если дня нет).
@@ -437,12 +450,13 @@ export class CashflowForecastEngine {
           company, transactions, accounts, monthStart, monthEnd,
         );
 
-        // Ежемесячные налоги → следующий месяц
+        // Ежемесячные налоги → платятся в СЛЕДУЮЩЕМ месяце после расчётного.
+        // В лейбле указываем расчётный месяц для прозрачности.
         if (taxCalc.insurance_amount > 0) {
           const payDate = getTaxPaymentDate(month, taxDays.insurance, 1);
           if (payDate >= start_date && payDate <= end_date) {
             items.push(this.makeTaxItem(
-              company, payDate, 'Страховые взносы',
+              company, payDate, `Страховые взносы (за ${formatMonthRu(month)})`,
               taxCalc.insurance_amount, 'acc-tax-insurance',
             ));
           }
@@ -451,34 +465,45 @@ export class CashflowForecastEngine {
           const payDate = getTaxPaymentDate(month, taxDays.ndfl, 1);
           if (payDate >= start_date && payDate <= end_date) {
             items.push(this.makeTaxItem(
-              company, payDate, 'НДФЛ',
+              company, payDate, `НДФЛ (за ${formatMonthRu(month)})`,
               taxCalc.ndfl_amount, 'acc-tax-ndfl',
             ));
           }
         }
 
-        // Квартальные — в конце квартала
+        // Квартальные — только в конце квартала.
+        // Считаем налог за ВЕСЬ квартал (3 месяца), не за 1 месяц.
         const isQuarterEnd = mm === 3 || mm === 6 || mm === 9 || mm === 12;
         if (isQuarterEnd) {
-          if (taxCalc.vat_to_pay > 0) {
+          const quarterStartMonth = mm - 2; // 1-й месяц квартала
+          const quarterStart = `${yy}-${String(quarterStartMonth).padStart(2, '0')}-01`;
+
+          const quarterlyTaxCalc = taxEngine.calculateTax(
+            company, transactions, accounts, quarterStart, monthEnd,
+          );
+
+          if (quarterlyTaxCalc.vat_to_pay > 0) {
             const payDate = getTaxPaymentDate(month, taxDays.vat, 1);
             if (payDate >= start_date && payDate <= end_date) {
               items.push(this.makeTaxItem(
-                company, payDate, 'НДС',
-                taxCalc.vat_to_pay, 'acc-tax-vat',
+                company, payDate, 'НДС (за квартал)',
+                quarterlyTaxCalc.vat_to_pay, 'acc-tax-vat',
               ));
             }
           }
-          if (taxCalc.income_tax_amount > 0) {
+
+          if (quarterlyTaxCalc.income_tax_amount > 0) {
             const isOsno = company.tax_system === 'OSNO';
-            const label = isOsno ? 'Налог на прибыль' : 'Налог УСН';
+            const label = isOsno
+              ? 'Налог на прибыль (за квартал)'
+              : 'Налог УСН (за квартал)';
             const accId = isOsno ? 'acc-tax-profit' : 'acc-tax-usn';
             const day = isOsno ? taxDays.profit : taxDays.usn;
             const payDate = getTaxPaymentDate(month, day, 1);
             if (payDate >= start_date && payDate <= end_date) {
               items.push(this.makeTaxItem(
                 company, payDate, label,
-                taxCalc.income_tax_amount, accId,
+                quarterlyTaxCalc.income_tax_amount, accId,
               ));
             }
           }
@@ -515,6 +540,7 @@ export class CashflowForecastEngine {
       company_id: company.id,
       company_name: company.name,
       source: 'calculated',
+      record_type: 'plan',
     };
   }
 
