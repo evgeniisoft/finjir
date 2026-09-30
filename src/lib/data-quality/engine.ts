@@ -10,6 +10,8 @@ import {
   DataQualityException,
   Violation,
   SuggestedAction,
+  ConditionGroup,
+  ConditionItem,
 } from './types';
 import {
   defaultProblemTemplate,
@@ -79,22 +81,84 @@ export class DataQualityEngine {
     const cond = rule.condition;
     if (!cond || Object.keys(cond).length === 0) return true;
 
-    for (const [key, value] of Object.entries(cond)) {
+    // Новый формат: { and: [...] } или { or: [...] }
+    if (('and' in cond) || ('or' in cond)) {
+      const group = cond as ConditionGroup;
+      if (group.and && Array.isArray(group.and)) {
+        return group.and.every(c => this.checkOneCondition(c, entity));
+      }
+      if (group.or && Array.isArray(group.or)) {
+        return group.or.some(c => this.checkOneCondition(c, entity));
+      }
+      return true;
+    }
+
+    // Старый формат (обратная совместимость)
+    for (const [key, value] of Object.entries(cond as Record<string, any>)) {
       if (key.endsWith('_like')) {
         const field = key.replace(/_like$/, '');
         const pattern = String(value).replace(/%/g, '.*');
         const re = new RegExp(`^${pattern}$`);
         if (!re.test(String(entity[field] || ''))) return false;
+      } else if (key.endsWith('_not_like')) {
+        const field = key.replace(/_not_like$/, '');
+        const pattern = String(value).replace(/%/g, '.*');
+        const re = new RegExp(`^${pattern}$`);
+        if (re.test(String(entity[field] || ''))) return false;
       } else if (key.endsWith('_in')) {
         const field = key.replace(/_in$/, '');
         if (!Array.isArray(value)) return false;
         if (!value.includes(entity[field])) return false;
+      } else if (key.endsWith('_not_in')) {
+        const field = key.replace(/_not_in$/, '');
+        if (!Array.isArray(value)) return false;
+        if (value.includes(entity[field])) return false;
+      } else if (key.endsWith('_neq')) {
+        const field = key.replace(/_neq$/, '');
+        if (entity[field] === value) return false;
       } else {
         if (entity[key] !== value) return false;
       }
     }
 
     return true;
+  }
+
+  /**
+   * Проверка одного условия из нового формата.
+   */
+  private checkOneCondition(cond: ConditionItem, entity: any): boolean {
+    const { field, op, value } = cond;
+    const entityValue = entity[field];
+
+    switch (op) {
+      case 'eq':
+        return entityValue === value;
+      case 'neq':
+        return entityValue !== value;
+      case 'like': {
+        const pattern = String(value).replace(/%/g, '.*');
+        try {
+          return new RegExp(`^${pattern}$`).test(String(entityValue ?? ''));
+        } catch {
+          return false;
+        }
+      }
+      case 'not_like': {
+        const pattern = String(value).replace(/%/g, '.*');
+        try {
+          return !new RegExp(`^${pattern}$`).test(String(entityValue ?? ''));
+        } catch {
+          return false;
+        }
+      }
+      case 'in':
+        return Array.isArray(value) && value.includes(entityValue);
+      case 'not_in':
+        return Array.isArray(value) && !value.includes(entityValue);
+      default:
+        return false;
+    }
   }
 
   // ============================================
