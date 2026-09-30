@@ -610,9 +610,22 @@ export class CashflowForecastEngine {
 
     const bigOutflows = reasons.filter(r => Math.abs(r.amount) > 100_000);
     if (bigOutflows.length > 0) {
-      recs.push(
-        `Перенести крупные платежи: ${bigOutflows.map(r => r.description).join(', ')}.`,
-      );
+      // Группируем по компании — чтобы видеть, откуда основная нагрузка
+      const grouped: Record<string, ForecastItem[]> = {};
+      for (const r of bigOutflows) {
+        const key = r.company_name || 'Без компании';
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+      }
+
+      const parts: string[] = [];
+      for (const [companyName, items] of Object.entries(grouped)) {
+        const total = items.reduce((s, it) => s + Math.abs(it.amount), 0);
+        const labels = items.map(it => it.description).join(', ');
+        parts.push(`${companyName} — ${labels} (${Math.round(total).toLocaleString('ru-RU')} ₽)`);
+      }
+
+      recs.push(`Перенести крупные платежи: ${parts.join('; ')}.`);
     }
 
     if (duration > 3) {
