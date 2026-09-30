@@ -265,6 +265,10 @@ class PostgresRepository implements Repository {
     }
     clean = normalizeInputDates(clean, entity);
     clean = normalizeInputBooleans(clean, entity);
+    // Обработка пустых строк → null для отдельных полей
+    if (entity === "Transactions" && (!clean.import_hash || clean.import_hash === "")) {
+      clean.import_hash = null;
+    }
     for (const key of Object.keys(clean)) {
       if (clean[key] === "") {
         if (key.endsWith("_at") || key.endsWith("_date")) {
@@ -312,6 +316,10 @@ class PostgresRepository implements Repository {
       }
       clean = normalizeInputDates(clean, entity);
       clean = normalizeInputBooleans(clean, entity);
+      // Транзакции: пустой import_hash → null (для уникальности)
+      if (entity === "Transactions" && (!clean.import_hash || clean.import_hash === "")) {
+        clean.import_hash = null;
+      }
       for (const key of Object.keys(clean)) {
         if (clean[key] === "") {
           if (key.endsWith("_at") || key.endsWith("_date")) {
