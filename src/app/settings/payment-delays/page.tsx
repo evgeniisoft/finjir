@@ -92,17 +92,41 @@ export default function PaymentDelaysPage() {
         return <div className="text-center py-12">Загрузка...</div>;
     }
 
-    const relevantAccounts = accounts.filter(a =>
-        (a.type === 'I' || a.type === 'X') &&
-        a.activity_type !== 'investing'
-    );
+    // Отсрочки применяются только к операционным доходам/расходам.
+    // Исключаем:
+    //  - налоги (настраиваются в /settings/tax-payment-days)
+    //  - амортизацию (не денежный поток)
+    //  - capex, кредиты, дивиденды (не операционные)
+    //  - инвестиционные доходы
+    const relevantAccounts = accounts.filter(a => {
+        if (a.type !== 'I' && a.type !== 'X') return false;
+        if (a.activity_type === 'investing') return false;
+        if (a.id.startsWith('acc-tax-')) return false;
+        if (a.id.startsWith('acc-depreciation-')) return false;
+        if (a.id === 'acc-out-capex') return false;
+        if (a.id.startsWith('acc-out-loan-')) return false;
+        if (a.id === 'acc-out-dividends') return false;
+        if (a.id === 'acc-in-loan') return false;
+        if (a.id.startsWith('acc-in-invest-')) return false;
+        return true;
+    });
 
     return (
         <div>
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Отсрочки платежей</h2>
             <p className="text-gray-500 mb-6">
-                Настройка периода между начислением (БДР) и оплатой (БДДС)
+                Настройка периода между начислением (БДР) и оплатой (БДДС) для операционных расходов и доходов.
             </p>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+                <p className="text-xs text-blue-700">
+                    <strong>Отсрочки налогов</strong> настраиваются отдельно — в разделе{' '}
+                    <a href="/settings/tax-payment-days" className="underline font-medium">
+                        Дни уплаты налогов
+                    </a>
+                    . Здесь налоговые счета не отображаются.
+                </p>
+            </div>
 
             <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <div className="mb-6">
