@@ -354,14 +354,22 @@ export default function TransactionsPage() {
                 Сумма <span className="text-red-500">*</span>
               </label>
               <input
-                type="number"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                placeholder="0.00"
-                min="0"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
+                value={formData.amount ? Number(formData.amount).toLocaleString('ru-RU') : ''}
+                onChange={(e) => {
+                  // Убираем всё, кроме цифр, точки и запятой
+                  const raw = e.target.value.replace(/[^\d.,]/g, '').replace(',', '.');
+                  setFormData({ ...formData, amount: raw });
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-right"
+                placeholder="0"
               />
+              {formData.amount && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {Number(formData.amount).toLocaleString('ru-RU')} ₽
+                </p>
+              )}
             </div>
 
             <div>
