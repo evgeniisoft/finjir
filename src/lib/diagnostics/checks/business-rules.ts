@@ -8,6 +8,7 @@ import { DiagnosticContext, DiagnosticCheck } from '../types';
 import { okCheck, problemCheck } from '../engine';
 import { taxEngine } from '@/lib/engine/tax';
 import { calculator } from '@/lib/engine/calculator';
+import { cashflowForecastEngine } from '@/lib/engine/cashflow-forecast';
 
 const LEVEL = 5 as const;
 const CATEGORY = 'business_rules' as const;
@@ -19,7 +20,7 @@ export async function runBusinessRuleChecks(ctx: DiagnosticContext): Promise<Dia
   checks.push(...checkUSNLimits(ctx));
 
   // 5.2 Кассовые разрывы
-  checks.push(...checkCashGaps(ctx));
+  checks.push(...await checkCashGaps(ctx));
 
   // 5.3 Рентабельность
   checks.push(...checkProfitability(ctx));
@@ -125,63 +126,84 @@ function checkUSNLimits(ctx: DiagnosticContext): DiagnosticCheck[] {
 }
 
 // ============================================
-// 5.2 Кассовые разрывы
+// 5.2 Кассовые разрывы (прогноз 90 дней)
 // ============================================
-function checkCashGaps(ctx: DiagnosticContext): DiagnosticCheck[] {
+async function checkCashGaps(ctx: DiagnosticContext): Promise<DiagnosticCheck[]> {
   const id = 'cash_gaps';
+  const HORIZON_DAYS = 90;
 
   try {
-    // Текущий остаток на СЕГОДНЯ (не на конец года)
-    const currentBalance = ctx.companies.reduce((s, c) =>
-      s + calculator.calculateBalanceSheet(ctx.transactions, ctx.accounts, c.id, ctx.today, c).assets.cash, 0);
+    const settings = ctx.settings
+      ? Object.entries(ctx.settings).map(([key, value]) => ({ key, value }))
+      : [];
 
-    // Будущие операции (только fact)
-    const futureTx = ctx.transactions
-      .filter(t => {
-        const d = String(t.date).split('T')[0];
-        return d >= ctx.today && t.record_type === 'fact';
-      })
-      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const forecast = await cashflowForecastEngine.forecast({
+      transactions: ctx.transactions,
+      accounts: ctx.accounts,
+      companies: ctx.companies,
+      budgets: ctx.budgets,
+      settings,
+      start_date: ctx.today,
+      horizon_days: HORIZON_DAYS,
+      company_id: null,
+      include_plan: true,
+      include_taxes: true,
+    });
 
-    let projectedCash = currentBalance;
-    const gaps: { date: string; deficit: number }[] = [];
+    const gaps = forecast.consolidated.gaps;
 
-    for (const t of futureTx) {
-      const amount = parseFloat(String(t.amount_rub || 0));
-      if (t.type === 'income') projectedCash += amount;
-      if (t.type === 'expense') projectedCash -= amount;
-
-      if (projectedCash < 0) {
-        const d = String(t.date).split('T')[0];
-        gaps.push({ date: d, deficit: Math.abs(projectedCash) });
-      }
-    }
-
-    if (gaps.length > 0) {
-      return [problemCheck(
-        id, LEVEL, CATEGORY, 'critical',
+    if (gaps.length === 0) {
+      return [okCheck(
+        id, LEVEL, CATEGORY,
         'Кассовые разрывы',
-        `${gaps.length} кассовых разрывов в прогнозе`,
-        {
-          count: gaps.length,
-          details: { gaps: gaps.slice(0, 20), current_balance: currentBalance },
-          reason: 'Прогнозный остаток становится отрицательным',
-          recommendation: 'Перенесите платежи или привлеките финансирование',
-          display: {
-            type: 'list',
-            items: gaps.slice(0, 5).map(g => ({
-              label: g.date,
-              value: `-${g.deficit.toLocaleString('ru-RU')} ₽`,
-              color: 'red' as const,
-            })),
-          },
-        }
+        `Кассовых разрывов нет за ${HORIZON_DAYS} дней (остаток: ${forecast.consolidated.starting_balance.toLocaleString('ru-RU')} ₽ → ${forecast.consolidated.ending_balance.toLocaleString('ru-RU')} ₽)`,
       )];
     }
 
-    return [okCheck(id, LEVEL, CATEGORY, 'Кассовые разрывы', `Кассовых разрывов нет (остаток: ${currentBalance.toLocaleString('ru-RU')} ₽)`)];
+    const totalDeficit = gaps.reduce((s, g) => s + g.max_deficit, 0);
+
+    // Собираем причины из первого разрыва
+    const firstGap = gaps[0];
+    const detailsLines = gaps.slice(0, 5).map(g =>
+      `${g.date} — ${g.end_date} (${g.duration_days} дн.), макс. −${Math.round(g.max_deficit).toLocaleString('ru-RU')} ₽`,
+    );
+
+    return [problemCheck(
+      id, LEVEL, CATEGORY, 'critical',
+      'Кассовые разрывы',
+      `${gaps.length} кассовых разрывов в прогнозе на ${HORIZON_DAYS} дней`,
+      {
+        count: gaps.length,
+        details: {
+          gaps: gaps.slice(0, 10),
+          total_deficit: totalDeficit,
+          first_gap_reasons: firstGap.reasons,
+          start_date: ctx.today,
+          horizon_days: HORIZON_DAYS,
+        },
+        reason: 'Прогнозный остаток становится отрицательным',
+        recommendation: 'Перенесите платежи, ускорьте сбор дебиторки или привлеките краткосрочное финансирование',
+        display: {
+          type: 'list',
+          items: [
+            { label: 'Разрывов', value: String(gaps.length), color: 'red' as const },
+            { label: 'Макс. дефицит', value: `−${Math.round(totalDeficit).toLocaleString('ru-RU')} ₽`, color: 'red' as const },
+            ...gaps.slice(0, 3).map(g => ({
+              label: g.date,
+              value: `−${Math.round(g.max_deficit).toLocaleString('ru-RU')} ₽`,
+              color: 'red' as const,
+            })),
+          ],
+        },
+      },
+    )];
   } catch (e: any) {
-    return [problemCheck(id, LEVEL, CATEGORY, 'warning', 'Кассовые разрывы', `Ошибка: ${e.message}`, { reason: e.message })];
+    return [problemCheck(
+      id, LEVEL, CATEGORY, 'warning',
+      'Кассовые разрывы',
+      `Ошибка: ${e.message}`,
+      { reason: e.message },
+    )];
   }
 }
 
