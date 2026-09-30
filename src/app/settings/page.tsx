@@ -207,12 +207,12 @@ export default function SettingsPage() {
     { id: "sources", label: "Источники данных" },
     { id: "mappings", label: "Маппинги" },
     { id: "taxes", label: "Налоги" },
+    { id: "tax_payment_days", label: "Дни уплаты налогов" },
     { id: "payment_delays", label: "Отсрочки платежей" },
     { id: "users", label: "Пользователи" },
     { id: "notifications", label: "Уведомления" },
     { id: "data_quality", label: "Качество данных" },
   ];
-
   return (
     <div>
       <div className="mb-8">
@@ -236,6 +236,8 @@ export default function SettingsPage() {
                     window.location.href = "/settings/balances";
                   } else if (section.id === "taxes") {
                     window.location.href = "/settings/taxes";
+                  } else if (section.id === "tax_payment_days") {
+                    window.location.href = "/settings/tax-payment-days";
                   } else if (section.id === "payment_delays") {
                     window.location.href = "/settings/payment-delays";
                   } else if (section.id === "data_quality") {
