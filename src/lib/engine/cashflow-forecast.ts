@@ -21,7 +21,7 @@
  */
 
 import { calculator } from './calculator';
-import { getSystemAccount } from '@/lib/config/accounts';
+import { taxEngine } from './tax';
 import {
   getAllTaxPaymentDays,
   TaxType,
@@ -66,16 +66,16 @@ export interface ForecastDay {
   outflow: number;
   balance_end: number;
   is_gap: boolean;
-  gap_amount: number;      // |balance_end|, если < 0
+  gap_amount: number;
   items: ForecastItem[];
 }
 
 export interface ForecastGap {
-  date: string;            // дата начала разрыва
-  end_date: string;        // дата окончания (последний день подряд)
+  date: string;
+  end_date: string;
   duration_days: number;
-  max_deficit: number;     // максимальный минус за период разрыва
-  reasons: ForecastItem[]; // крупные выбытия в день начала
+  max_deficit: number;
+  reasons: ForecastItem[];
   recommendations: string[];
 }
 
@@ -125,25 +125,18 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().split('T')[0];
 }
 
-function daysBetween(startDate: string, endDate: string): number {
-  const s = new Date(startDate + 'T00:00:00Z').getTime();
-  const e = new Date(endDate + 'T00:00:00Z').getTime();
-  return Math.round((e - s) / (1000 * 60 * 60 * 24));
-}
-
 function getLastDayOfMonth(year: number, month: number): number {
-  // month: 1..12
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 /**
- * Ближайшая дата уплаты налога: следующий месяц после месяца начисления,
+ * Дата уплаты налога: следующий месяц(ы) после месяца начисления,
  * указанный день (или последний день месяца, если дня нет).
  */
 function getTaxPaymentDate(
-  accrualMonth: string,   // "2026-09"
+  accrualMonth: string,
   paymentDay: number,
-  monthsShift: number,    // 1 для ежемесячных, 3 для квартальных
+  monthsShift: number,
 ): string {
   const [yearStr, monthStr] = accrualMonth.split('-');
   let year = parseInt(yearStr, 10);
@@ -166,7 +159,7 @@ function getTaxPaymentDate(
 
 export class CashflowForecastEngine {
 
-  forecast(params: ForecastParams): ForecastResult {
+  async forecast(params: ForecastParams): Promise<ForecastResult> {
     const {
       transactions, accounts, companies, budgets, settings,
       start_date, horizon_days,
@@ -175,6 +168,9 @@ export class CashflowForecastEngine {
     } = params;
 
     const end_date = addDays(start_date, horizon_days - 1);
+
+    // Загружаем настройки в taxEngine (для корректного расчёта налогов)
+    await taxEngine.loadSettings(settings);
 
     // Целевые компании
     const targetCompanies = params.company_id
@@ -192,7 +188,6 @@ export class CashflowForecastEngine {
       start_date, end_date,
       include_plan, include_taxes,
       taxDays,
-      filterCompanyId: null,
     });
 
     // ============================================
@@ -204,7 +199,6 @@ export class CashflowForecastEngine {
         start_date, end_date,
         include_plan, include_taxes,
         taxDays,
-        filterCompanyId: company.id,
       });
       const startingBalance = days.length > 0 ? days[0].balance_start : 0;
       const endingBalance = days.length > 0 ? days[days.length - 1].balance_end : 0;
@@ -215,7 +209,7 @@ export class CashflowForecastEngine {
         company_id: company.id,
         company_name: company.name,
         days,
-        gaps: this.extractGaps(days, accounts),
+        gaps: this.extractGaps(days),
         starting_balance: startingBalance,
         ending_balance: endingBalance,
         total_inflow: totalInflow,
@@ -239,7 +233,7 @@ export class CashflowForecastEngine {
       },
       consolidated: {
         days: consolidatedDays,
-        gaps: this.extractGaps(consolidatedDays, accounts),
+        gaps: this.extractGaps(consolidatedDays),
         starting_balance: consolidatedStarting,
         ending_balance: consolidatedEnding,
         total_inflow: consolidatedInflow,
@@ -263,13 +257,12 @@ export class CashflowForecastEngine {
     include_plan: boolean;
     include_taxes: boolean;
     taxDays: Record<TaxType, number>;
-    filterCompanyId: string | null;
   }): ForecastDay[] {
     const {
       transactions, accounts, companies, budgets,
       start_date, end_date,
       include_plan, include_taxes,
-      taxDays, filterCompanyId,
+      taxDays,
     } = args;
 
     const companyIds = new Set(companies.map(c => c.id));
@@ -312,7 +305,7 @@ export class CashflowForecastEngine {
       // Оба денежные — перевод. Нетто 0. Игнорируем.
       if (debitIsCash && creditIsCash) continue;
 
-      // Оба не денежные — не влияет на cash. Игнорируем.
+      // Оба не денежные — не влияет на cash.
       if (!debitIsCash && !creditIsCash) continue;
 
       const amount = parseFloat(String(t.amount_rub || t.amount || 0));
@@ -323,7 +316,6 @@ export class CashflowForecastEngine {
       const direction: 'inflow' | 'outflow' = isInflow ? 'inflow' : 'outflow';
       const sign = isInflow ? 1 : -1;
 
-      // Какой счёт не денежный — тот определяет категорию
       const categoryAcc = isInflow ? creditAcc : debitAcc;
 
       items.push({
@@ -377,8 +369,13 @@ export class CashflowForecastEngine {
     let currentDate = start_date;
     while (currentDate <= end_date) {
       const dayItems = itemsByDate.get(currentDate) || [];
-      const inflow = dayItems.filter(i => i.direction === 'inflow').reduce((s, i) => s + i.amount, 0);
-      const outflow = dayItems.filter(i => i.direction === 'outflow').reduce((s, i) => s + Math.abs(i.amount), 0);
+      const inflow = dayItems
+        .filter(i => i.direction === 'inflow')
+        .reduce((s, i) => s + i.amount, 0);
+      const outflow = dayItems
+        .filter(i => i.direction === 'outflow')
+        .reduce((s, i) => s + Math.abs(i.amount), 0);
+
       const balanceStart = balance;
       balance = balanceStart + inflow - outflow;
 
@@ -415,11 +412,9 @@ export class CashflowForecastEngine {
     const { transactions, accounts, companies, budgets, start_date, end_date, taxDays } = args;
     const items: ForecastItem[] = [];
 
-    // Определяем диапазон месяцев, покрывающих прогноз
+    // Список месяцев, покрывающих прогноз
     const startMonth = start_date.substring(0, 7);
     const endMonth = end_date.substring(0, 7);
-
-    // Собираем список месяцев между start и end (включительно)
     const months: string[] = [];
     {
       let [y, m] = startMonth.split('-').map(Number);
@@ -431,8 +426,6 @@ export class CashflowForecastEngine {
       }
     }
 
-    // Для каждой компании — считаем налоги помесячно через taxEngine
-    // (переиспользуем getMonthlyTaxCalendar, но нам нужны суммы по каждому налогу).
     for (const company of companies) {
       for (const month of months) {
         const monthStart = `${month}-01`;
@@ -440,52 +433,65 @@ export class CashflowForecastEngine {
         const lastDay = getLastDayOfMonth(yy, mm);
         const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
 
-        // Расчёт налогов за этот месяц (accrual)
-        const { taxEngine } = require('./tax');
         const taxCalc = taxEngine.calculateTax(
           company, transactions, accounts, monthStart, monthEnd,
         );
 
-        // Помесячные налоги (страховые + НДФЛ) — платятся в СЛЕДУЮЩЕМ месяце
+        // Ежемесячные налоги → следующий месяц
         if (taxCalc.insurance_amount > 0) {
           const payDate = getTaxPaymentDate(month, taxDays.insurance, 1);
           if (payDate >= start_date && payDate <= end_date) {
-            items.push(this.makeTaxItem(company, payDate, 'Страховые взносы', taxCalc.insurance_amount, 'acc-tax-insurance'));
+            items.push(this.makeTaxItem(
+              company, payDate, 'Страховые взносы',
+              taxCalc.insurance_amount, 'acc-tax-insurance',
+            ));
           }
         }
         if (taxCalc.ndfl_amount > 0) {
           const payDate = getTaxPaymentDate(month, taxDays.ndfl, 1);
           if (payDate >= start_date && payDate <= end_date) {
-            items.push(this.makeTaxItem(company, payDate, 'НДФЛ', taxCalc.ndfl_amount, 'acc-tax-ndfl'));
+            items.push(this.makeTaxItem(
+              company, payDate, 'НДФЛ',
+              taxCalc.ndfl_amount, 'acc-tax-ndfl',
+            ));
           }
         }
 
-        // Квартальные налоги — только в конце квартала
-        const monthNum = mm;
-        const isQuarterEnd = monthNum === 3 || monthNum === 6 || monthNum === 9 || monthNum === 12;
+        // Квартальные — в конце квартала
+        const isQuarterEnd = mm === 3 || mm === 6 || mm === 9 || mm === 12;
         if (isQuarterEnd) {
           if (taxCalc.vat_to_pay > 0) {
             const payDate = getTaxPaymentDate(month, taxDays.vat, 1);
             if (payDate >= start_date && payDate <= end_date) {
-              items.push(this.makeTaxItem(company, payDate, 'НДС', taxCalc.vat_to_pay, 'acc-tax-vat'));
+              items.push(this.makeTaxItem(
+                company, payDate, 'НДС',
+                taxCalc.vat_to_pay, 'acc-tax-vat',
+              ));
             }
           }
           if (taxCalc.income_tax_amount > 0) {
             const isOsno = company.tax_system === 'OSNO';
             const label = isOsno ? 'Налог на прибыль' : 'Налог УСН';
             const accId = isOsno ? 'acc-tax-profit' : 'acc-tax-usn';
-            const payDate = getTaxPaymentDate(month, isOsno ? taxDays.profit : taxDays.usn, 1);
+            const day = isOsno ? taxDays.profit : taxDays.usn;
+            const payDate = getTaxPaymentDate(month, day, 1);
             if (payDate >= start_date && payDate <= end_date) {
-              items.push(this.makeTaxItem(company, payDate, label, taxCalc.income_tax_amount, accId));
+              items.push(this.makeTaxItem(
+                company, payDate, label,
+                taxCalc.income_tax_amount, accId,
+              ));
             }
           }
         }
 
-        // Фикс. взносы ИП — в декабре
-        if (monthNum === 12 && company.is_individual && taxCalc.ip_fixed_amount > 0) {
+        // Фикс. взносы ИП — декабрь
+        if (mm === 12 && company.is_individual && taxCalc.ip_fixed_amount > 0) {
           const payDate = getTaxPaymentDate(month, taxDays.ip_fixed, 0);
           if (payDate >= start_date && payDate <= end_date) {
-            items.push(this.makeTaxItem(company, payDate, 'Фикс. взносы ИП', taxCalc.ip_fixed_amount, 'acc-tax-ip'));
+            items.push(this.makeTaxItem(
+              company, payDate, 'Фикс. взносы ИП',
+              taxCalc.ip_fixed_amount, 'acc-tax-ip',
+            ));
           }
         }
       }
@@ -516,13 +522,12 @@ export class CashflowForecastEngine {
   // Разрывы
   // ============================================
 
-  private extractGaps(days: ForecastDay[], accounts: any[]): ForecastGap[] {
+  private extractGaps(days: ForecastDay[]): ForecastGap[] {
     const gaps: ForecastGap[] = [];
     let i = 0;
     while (i < days.length) {
       if (!days[i].is_gap) { i++; continue; }
 
-      // Начало разрыва
       const startIdx = i;
       let maxDeficit = days[i].gap_amount;
       let endIdx = i;
@@ -556,7 +561,6 @@ export class CashflowForecastEngine {
     const recs: string[] = [];
     const duration = endIdx - startIdx + 1;
 
-    // Крупные выбытия в день начала
     const bigOutflows = reasons.filter(r => Math.abs(r.amount) > 100_000);
     if (bigOutflows.length > 0) {
       recs.push(
@@ -571,9 +575,7 @@ export class CashflowForecastEngine {
     }
 
     if (days[startIdx].inflow === 0) {
-      recs.push(
-        'В день начала разрыва нет поступлений. Ускорить сбор дебиторки.',
-      );
+      recs.push('В день начала разрыва нет поступлений. Ускорить сбор дебиторки.');
     }
 
     if (recs.length === 0) {
