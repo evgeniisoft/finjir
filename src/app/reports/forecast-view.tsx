@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 
 // ============================================
 // Типы
@@ -74,7 +74,7 @@ interface ForecastResult {
 
 interface ForecastViewProps {
   viewMode: 'consolidated' | 'by_company';
-  companyId: string | null; // null = все компании
+  companyId: string | null;
   companies: any[];
 }
 
@@ -89,6 +89,8 @@ const HORIZON_OPTIONS = [
   { value: 180, label: '180 дней' },
   { value: 365, label: '365 дней' },
 ];
+
+const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
 // ============================================
 // Утилиты
@@ -106,15 +108,33 @@ function fmtSigned(v: number): string {
 }
 
 function fmtDate(d: string): string {
-  // "2026-10-09" → "09.10.2026"
   const [y, m, day] = d.split('-');
   return `${day}.${m}.${y}`;
 }
 
 function fmtDateShort(d: string): string {
-  // "2026-10-09" → "09.10"
   const [, m, day] = d.split('-');
   return `${day}.${m}`;
+}
+
+/**
+ * Красивая подпись суммы: миллионы/тысячи.
+ * 31804600 → "31,8 млн"
+ * 1304600  → "1,3 млн"
+ * 450000   → "450 тыс."
+ * 1200     → "1,2 тыс."
+ * 500      → "500"
+ */
+function fmtCompact(v: number): string {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '−' : '';
+  if (abs >= 1_000_000) {
+    return `${sign}${(abs / 1_000_000).toFixed(1).replace('.', ',')} млн`;
+  }
+  if (abs >= 1_000) {
+    return `${sign}${(abs / 1_000).toFixed(1).replace('.', ',')} тыс.`;
+  }
+  return `${sign}${Math.round(abs)}`;
 }
 
 // ============================================
@@ -159,10 +179,6 @@ export default function ForecastView({ viewMode, companyId, companies }: Forecas
     }
   };
 
-  // ============================================
-  // Рендер
-  // ============================================
-
   if (loading) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
@@ -182,9 +198,6 @@ export default function ForecastView({ viewMode, companyId, companies }: Forecas
 
   if (!data) return null;
 
-  // ============================================
-  // Консолидированный вид
-  // ============================================
   if (viewMode === 'consolidated') {
     return (
       <div className="space-y-6">
@@ -204,9 +217,6 @@ export default function ForecastView({ viewMode, companyId, companies }: Forecas
     );
   }
 
-  // ============================================
-  // По компаниям
-  // ============================================
   return (
     <div className="space-y-6">
       <Filters
@@ -287,7 +297,7 @@ function Filters({
 }
 
 // ============================================
-// Блок прогноза (для одной компании или холдинга)
+// Блок прогноза
 // ============================================
 
 function ForecastBlockView({
@@ -306,25 +316,13 @@ function ForecastBlockView({
 
   const hasGaps = block.gaps.length > 0;
 
-  // Дни с движениями
   const daysWithItems = useMemo(
     () => block.days.filter(d => d.items.length > 0),
     [block.days],
   );
 
-  // Диапазон для графика
-  const minBalance = useMemo(
-    () => Math.min(...block.days.map(d => d.balance_end), 0),
-    [block.days],
-  );
-  const maxBalance = useMemo(
-    () => Math.max(...block.days.map(d => d.balance_end), 1),
-    [block.days],
-  );
-
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      {/* Заголовок */}
       <div className="px-6 py-4 border-b border-gray-100">
         <h3 className="font-semibold text-gray-900">{title}</h3>
         <p className="text-xs text-gray-500 mt-0.5">
@@ -332,7 +330,6 @@ function ForecastBlockView({
         </p>
       </div>
 
-      {/* Карточки */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 border-b border-gray-100">
         <StatCard label="Стартовый остаток" value={fmtMoney(block.starting_balance)} />
         <StatCard
@@ -352,19 +349,16 @@ function ForecastBlockView({
         />
       </div>
 
-      {/* График */}
       {block.days.length > 0 && (
         <div className="p-6 border-b border-gray-100">
-          <h4 className="text-sm font-medium text-gray-700 mb-3">Динамика остатка</h4>
-          <BalanceChart
-            days={block.days}
-            min={minBalance}
-            max={maxBalance}
-          />
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-medium text-gray-700">Динамика остатка</h4>
+            <Legend />
+          </div>
+          <BalanceChart days={block.days} />
         </div>
       )}
 
-      {/* Разрывы */}
       <div className="p-6 border-b border-gray-100">
         <h4 className="text-sm font-medium text-gray-700 mb-3">
           Разрывы ({block.gaps.length})
@@ -382,7 +376,6 @@ function ForecastBlockView({
         )}
       </div>
 
-      {/* Таблица по дням */}
       <div className="p-6">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-medium text-gray-700">
@@ -408,7 +401,7 @@ function ForecastBlockView({
 }
 
 // ============================================
-// Карточка-статистика
+// Карточка
 // ============================================
 
 function StatCard({
@@ -435,31 +428,68 @@ function StatCard({
 }
 
 // ============================================
-// SVG-график
+// Легенда
 // ============================================
 
-function BalanceChart({
-  days,
-  min,
-  max,
-}: {
-  days: ForecastDay[];
-  min: number;
-  max: number;
-}) {
-  const W = 800;
-  const H = 200;
-  const PAD = 40;
+function Legend() {
+  return (
+    <div className="flex items-center gap-4 text-xs text-gray-500">
+      <div className="flex items-center gap-1.5">
+        <span className="inline-block w-4 h-0.5 bg-green-500"></span>
+        <span>остаток ≥ 0</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="inline-block w-4 h-0.5 bg-red-500"></span>
+        <span>остаток &lt; 0</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="inline-block w-4 h-0.5 bg-red-400" style={{ borderTop: '2px dashed #EF4444', height: 0 }}></span>
+        <span>ноль</span>
+      </div>
+    </div>
+  );
+}
 
+// ============================================
+// График (улучшенный)
+// ============================================
+
+function BalanceChart({ days }: { days: ForecastDay[] }) {
+  const W = 900;
+  const H = 260;
+  const PAD_L = 70;
+  const PAD_R = 20;
+  const PAD_T = 20;
+  const PAD_B = 40;
+
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+
+  // Range
+  const balances = days.map(d => d.balance_end);
+  const rawMin = Math.min(...balances, 0);
+  const rawMax = Math.max(...balances, 1);
+
+  // Округляем до красивых значений
+  const min = Math.floor(rawMin / 1_000_000) * 1_000_000 - 1_000_000;
+  const max = Math.ceil(rawMax / 1_000_000) * 1_000_000 + 1_000_000;
   const range = max - min || 1;
 
-  const points = days.map((d, i) => {
-    const x = PAD + (i / Math.max(1, days.length - 1)) * (W - PAD * 2);
-    const y = H - PAD - ((d.balance_end - min) / range) * (H - PAD * 2);
-    return { x, y, day: d };
-  });
+  const xFor = (i: number) =>
+    PAD_L + (i / Math.max(1, days.length - 1)) * chartW;
+  const yFor = (v: number) =>
+    PAD_T + (1 - (v - min) / range) * chartH;
 
-  // Разбиваем на сегменты: положительные / отрицательные
+  const zeroY = yFor(0);
+
+  // Точки
+  const points = days.map((d, i) => ({
+    x: xFor(i),
+    y: yFor(d.balance_end),
+    day: d,
+  }));
+
+  // Сегменты по знаку
   const segments: Array<{ positive: boolean; points: Array<{ x: number; y: number }> }> = [];
   let currentSegment: { positive: boolean; points: Array<{ x: number; y: number }> } | null = null;
 
@@ -473,77 +503,170 @@ function BalanceChart({
     }
   }
 
-  // Нулевая линия
-  const zeroY = H - PAD - ((0 - min) / range) * (H - PAD * 2);
+  // Найти первый разрыв
+  const firstGapIdx = days.findIndex(d => d.is_gap);
+
+  // Подписи дат — каждые 7 дней
+  const dateLabelIndices: number[] = [];
+  for (let i = 0; i < days.length; i += 7) {
+    dateLabelIndices.push(i);
+  }
+  if (dateLabelIndices[dateLabelIndices.length - 1] !== days.length - 1) {
+    dateLabelIndices.push(days.length - 1);
+  }
+
+  // Y-сетка — 5 уровней
+  const yGridCount = 5;
+  const yGridValues: number[] = [];
+  for (let i = 0; i < yGridCount; i++) {
+    yGridValues.push(min + (range * i) / (yGridCount - 1));
+  }
+  // Убираем близкие к 0
+  const filteredGrid = yGridValues.filter(v => Math.abs(v) > range * 0.03);
+
+  // Hover state
+  const [hover, setHover] = useState<{ idx: number; x: number; y: number } | null>(null);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 220 }}>
-      {/* Ось X */}
-      <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="#E5E7EB" strokeWidth="1" />
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 280 }}>
+        {/* Y-сетка */}
+        {filteredGrid.map((v, i) => (
+          <g key={i}>
+            <line
+              x1={PAD_L}
+              y1={yFor(v)}
+              x2={W - PAD_R}
+              y2={yFor(v)}
+              stroke="#F3F4F6"
+              strokeWidth="1"
+            />
+            <text
+              x={PAD_L - 8}
+              y={yFor(v) + 4}
+              textAnchor="end"
+              fontSize="10"
+              fill="#9CA3AF"
+            >
+              {fmtCompact(v)}
+            </text>
+          </g>
+        ))}
 
-      {/* Нулевая линия */}
-      {zeroY >= PAD && zeroY <= H - PAD && (
+        {/* Нулевая линия */}
         <line
-          x1={PAD}
+          x1={PAD_L}
           y1={zeroY}
-          x2={W - PAD}
+          x2={W - PAD_R}
           y2={zeroY}
           stroke="#EF4444"
           strokeWidth="1"
           strokeDasharray="4 4"
-          opacity="0.5"
+          opacity="0.6"
         />
-      )}
 
-      {/* Сегменты */}
-      {segments.map((seg, idx) => {
-        if (seg.points.length === 0) return null;
-        const d = seg.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-        const color = seg.positive ? '#10B981' : '#EF4444';
-        return <path key={idx} d={d} fill="none" stroke={color} strokeWidth="2" />;
-      })}
+        {/* Сегменты */}
+        {segments.map((seg, idx) => {
+          if (seg.points.length === 0) return null;
+          const d = seg.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+          const color = seg.positive ? '#10B981' : '#EF4444';
+          return <path key={idx} d={d} fill="none" stroke={color} strokeWidth="2" />;
+        })}
 
-      {/* Точки пиков */}
-      {points.length > 0 && (
-        <>
-          {/* Первая и последняя точки */}
-          <circle cx={points[0].x} cy={points[0].y} r="3" fill="#3B82F6" />
+        {/* Точки при hover */}
+        {points.map((p, i) => (
           <circle
-            cx={points[points.length - 1].x}
-            cy={points[points.length - 1].y}
-            r="3"
+            key={i}
+            cx={p.x}
+            cy={p.y}
+            r={hover?.idx === i ? 5 : 0}
             fill="#3B82F6"
+            stroke="#fff"
+            strokeWidth="2"
+            style={{ transition: 'r 0.1s' }}
           />
+        ))}
 
-          {/* Подписи даты (первая, средняя, последняя) */}
-          {[0, Math.floor(points.length / 2), points.length - 1].map((i, idx) => (
+        {/* Invisible клики для hover */}
+        {points.map((p, i) => (
+          <rect
+            key={`hit-${i}`}
+            x={p.x - chartW / days.length / 2}
+            y={PAD_T}
+            width={chartW / days.length}
+            height={chartH}
+            fill="transparent"
+            onMouseEnter={() => setHover({ idx: i, x: p.x, y: p.y })}
+            onMouseLeave={() => setHover(null)}
+            style={{ cursor: 'crosshair' }}
+          />
+        ))}
+
+        {/* Маркер первого разрыва */}
+        {firstGapIdx >= 0 && (
+          <>
+            <circle
+              cx={points[firstGapIdx].x}
+              cy={points[firstGapIdx].y}
+              r="6"
+              fill="#EF4444"
+              stroke="#fff"
+              strokeWidth="2"
+            />
             <text
-              key={idx}
-              x={points[i].x}
-              y={H - PAD + 15}
+              x={points[firstGapIdx].x}
+              y={points[firstGapIdx].y - 12}
               textAnchor="middle"
-              fontSize="10"
-              fill="#6B7280"
+              fontSize="11"
+              fontWeight="600"
+              fill="#DC2626"
             >
-              {fmtDateShort(points[i].day.date)}
+              ⚠ разрыв
             </text>
-          ))}
-        </>
-      )}
+          </>
+        )}
 
-      {/* Метки min/max */}
-      <text x={PAD - 5} y={PAD - 5} textAnchor="end" fontSize="10" fill="#9CA3AF">
-        {Math.round(max).toLocaleString('ru-RU')}
-      </text>
-      <text x={PAD - 5} y={H - PAD + 5} textAnchor="end" fontSize="10" fill="#9CA3AF">
-        {Math.round(min).toLocaleString('ru-RU')}
-      </text>
-    </svg>
+        {/* Подписи дат */}
+        {dateLabelIndices.map((i, idx) => (
+          <text
+            key={idx}
+            x={points[i].x}
+            y={H - PAD_B + 15}
+            textAnchor="middle"
+            fontSize="10"
+            fill="#6B7280"
+          >
+            {fmtDateShort(points[i].day.date)}
+          </text>
+        ))}
+      </svg>
+
+      {/* Tooltip */}
+      {hover && (
+        <div
+          className="absolute bg-gray-900 text-white text-xs rounded-lg px-3 py-2 pointer-events-none shadow-lg z-10"
+          style={{
+            left: `${(hover.x / W) * 100}%`,
+            top: `${(hover.y / H) * 100}%`,
+            transform: 'translate(-50%, -110%)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <div className="font-medium mb-1">{fmtDate(hover.day.date)}</div>
+          <div>Остаток: {fmtMoney(hover.day.balance_end)}</div>
+          {hover.day.items.length > 0 && (
+            <div className="mt-1 pt-1 border-t border-gray-700 text-xs text-gray-300">
+              {hover.day.items.length} операций
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
 // ============================================
-// Карточка разрыва
+// Карточка разрыва (с компанией)
 // ============================================
 
 function GapCard({ gap }: { gap: ForecastGap }) {
@@ -569,8 +692,16 @@ function GapCard({ gap }: { gap: ForecastGap }) {
           <p className="text-xs font-medium text-red-900 mb-1">Крупные выбытия:</p>
           <ul className="text-xs text-red-700 space-y-0.5">
             {gap.reasons.map((r, idx) => (
-              <li key={idx}>
-                • {r.description} — {Math.abs(Math.round(r.amount)).toLocaleString('ru-RU')} ₽
+              <li key={idx} className="flex justify-between gap-2">
+                <span>
+                  • {r.description}
+                  {r.company_name && (
+                    <span className="text-red-500"> [{r.company_name}]</span>
+                  )}
+                </span>
+                <span className="font-medium">
+                  −{Math.abs(Math.round(r.amount)).toLocaleString('ru-RU')} ₽
+                </span>
               </li>
             ))}
           </ul>
@@ -619,21 +750,11 @@ function DaysTable({
       <table className="w-full">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">
-              Дата
-            </th>
-            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-              Остаток нач.
-            </th>
-            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-              Поступления
-            </th>
-            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-              Выбытия
-            </th>
-            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">
-              Остаток кон.
-            </th>
+            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Дата</th>
+            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Остаток нач.</th>
+            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Поступления</th>
+            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Выбытия</th>
+            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Остаток кон.</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -641,9 +762,8 @@ function DaysTable({
             const isExpanded = expandedDay === day.date;
             const hasItems = day.items.length > 0;
             return (
-              <>
+              <React.Fragment key={day.date}>
                 <tr
-                  key={day.date}
                   className={`${hasItems ? 'cursor-pointer hover:bg-gray-50' : ''} ${
                     day.is_gap ? 'bg-red-50' : ''
                   }`}
@@ -671,49 +791,36 @@ function DaysTable({
                   <td className="px-3 py-2 text-sm text-right text-red-600">
                     {day.outflow > 0 ? `−${Math.round(day.outflow).toLocaleString('ru-RU')}` : '—'}
                   </td>
-                  <td
-                    className={`px-3 py-2 text-sm text-right font-medium ${
-                      day.balance_end < 0 ? 'text-red-600' : 'text-gray-900'
-                    }`}
-                  >
+                  <td className={`px-3 py-2 text-sm text-right font-medium ${
+                    day.balance_end < 0 ? 'text-red-600' : 'text-gray-900'
+                  }`}>
                     {Math.round(day.balance_end).toLocaleString('ru-RU')}
                   </td>
                 </tr>
                 {isExpanded && hasItems && (
-                  <tr key={`${day.date}-items`}>
+                  <tr>
                     <td colSpan={5} className="px-3 py-2 bg-gray-50">
                       <div className="space-y-1">
                         {day.items.map(item => (
-                          <div
-                            key={item.id}
-                            className="flex justify-between text-xs py-1"
-                          >
+                          <div key={item.id} className="flex justify-between text-xs py-1">
                             <div className="flex items-center gap-2">
-                              <span
-                                className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${
-                                  item.type === 'tax'
-                                    ? 'bg-red-100 text-red-700'
-                                    : item.source === 'plan'
-                                      ? 'bg-yellow-100 text-yellow-700'
-                                      : 'bg-gray-100 text-gray-600'
-                                }`}
-                              >
-                                {item.type === 'tax'
-                                  ? 'налог'
+                              <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${
+                                item.type === 'tax'
+                                  ? 'bg-red-100 text-red-700'
                                   : item.source === 'plan'
-                                    ? 'план'
-                                    : 'факт'}
+                                    ? 'bg-yellow-100 text-yellow-700'
+                                    : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {item.type === 'tax' ? 'налог' : item.source === 'plan' ? 'план' : 'факт'}
                               </span>
                               <span className="text-gray-900">{item.description}</span>
                               {item.company_name && (
                                 <span className="text-gray-500">[{item.company_name}]</span>
                               )}
                             </div>
-                            <span
-                              className={`font-medium ${
-                                item.direction === 'inflow' ? 'text-green-600' : 'text-red-600'
-                              }`}
-                            >
+                            <span className={`font-medium ${
+                              item.direction === 'inflow' ? 'text-green-600' : 'text-red-600'
+                            }`}>
                               {item.direction === 'inflow' ? '+' : '−'}
                               {Math.abs(Math.round(item.amount)).toLocaleString('ru-RU')} ₽
                             </span>
@@ -723,7 +830,7 @@ function DaysTable({
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             );
           })}
         </tbody>
