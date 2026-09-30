@@ -642,7 +642,7 @@ function BalanceChart({ days }: { days: ForecastDay[] }) {
       </svg>
 
       {/* Tooltip */}
-      {hover && (
+      {hover && points[hover.idx] && (
         <div
           className="absolute bg-gray-900 text-white text-xs rounded-lg px-3 py-2 pointer-events-none shadow-lg z-10"
           style={{
@@ -652,11 +652,13 @@ function BalanceChart({ days }: { days: ForecastDay[] }) {
             whiteSpace: 'nowrap',
           }}
         >
-          <div className="font-medium mb-1">{fmtDate(hover.day.date)}</div>
-          <div>Остаток: {fmtMoney(hover.day.balance_end)}</div>
-          {hover.day.items.length > 0 && (
+          <div className="font-medium mb-1">
+            {fmtDate(points[hover.idx].day.date)}
+          </div>
+          <div>Остаток: {fmtMoney(points[hover.idx].day.balance_end)}</div>
+          {points[hover.idx].day.items.length > 0 && (
             <div className="mt-1 pt-1 border-t border-gray-700 text-xs text-gray-300">
-              {hover.day.items.length} операций
+              {points[hover.idx].day.items.length} операций
             </div>
           )}
         </div>
