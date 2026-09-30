@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
@@ -17,7 +17,7 @@ import {
 } from "@/lib/utils/period";
 import ForecastView from "./forecast-view";
 
-export default function ReportsPage() {
+function ReportsPageInner() {
   const searchParams = useSearchParams();
 
   // ============================================
@@ -697,6 +697,23 @@ export default function ReportsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ============================================
+// EXPORT с Suspense (Next.js 16 требует)
+// ============================================
+export default function ReportsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        </div>
+      }
+    >
+      <ReportsPageInner />
+    </Suspense>
   );
 }
 
