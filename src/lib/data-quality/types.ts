@@ -24,6 +24,36 @@ export type ActionType =
   | 'create_exception'
   | 'run_auto_fix';
 
+// ============================================
+// Условия (новый формат)
+// ============================================
+
+export type ConditionOp =
+  | 'eq'         // =
+  | 'neq'        // ≠
+  | 'like'       // LIKE с %
+  | 'not_like'   // NOT LIKE
+  | 'in'         // IN список
+  | 'not_in';    // NOT IN список
+
+export interface ConditionItem {
+  field: string;
+  op: ConditionOp;
+  value: any;
+}
+
+export interface ConditionGroup {
+  and?: ConditionItem[];
+  or?: ConditionItem[];   // задел на будущее
+}
+
+// Старый формат (обратная совместимость) — Record<string, any>
+export type ConditionOld = Record<string, any>;
+
+// ============================================
+// Правило
+// ============================================
+
 export interface DataQualityRule {
   id: string;
   tenant_id?: string;
@@ -33,7 +63,7 @@ export interface DataQualityRule {
   rule_type: RuleType;
   entity_type: EntityType;
   target_field: string;
-  condition?: Record<string, any> | null;
+  condition?: ConditionGroup | ConditionOld | null;
   params?: Record<string, any> | null;
   problem_template?: string | null;
   explanation_template?: string | null;
@@ -111,18 +141,6 @@ export interface DataQualityException {
   entity_id: string;
   reason?: string | null;
   created_by?: string | null;
-  created_at?: string;
-}
-
-export interface DataQualityActionLogEntry {
-  id: string;
-  rule_id?: string | null;
-  action_type: string;
-  entity_type: string;
-  entity_id: string;
-  before_value?: string | null;
-  after_value?: string | null;
-  user_id?: string | null;
   created_at?: string;
 }
 
