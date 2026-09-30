@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import ConditionEditor from './condition-editor';
 
 const RULE_TYPES = [
   { value: 'must_contain', label: 'Должно содержать' },
@@ -24,7 +25,23 @@ const SEVERITIES = [
   { value: 'info', label: 'Инфо' },
 ];
 
-export default function RuleEditor({ rule, onSave, onCancel }: any) {
+const TARGET_FIELDS = [
+  { value: 'description', label: 'Описание' },
+  { value: 'counterparty_id', label: 'Контрагент' },
+  { value: 'amount_rub', label: 'Сумма' },
+  { value: 'date', label: 'Дата' },
+  { value: 'type', label: 'Тип' },
+  { value: 'record_type', label: 'Record type' },
+  { value: 'company_id', label: 'Компания' },
+];
+
+interface ConditionItem {
+  field: string;
+  op: 'eq' | 'neq' | 'like' | 'not_like' | 'in' | 'not_in';
+  value: any;
+}
+
+export default function RuleEditor({ rule, onSave, onCancel, accounts = [] }: any) {
   const isEdit = Boolean(rule?.id);
 
   const [name, setName] = useState(rule?.name || '');
@@ -33,8 +50,6 @@ export default function RuleEditor({ rule, onSave, onCancel }: any) {
   const [ruleType, setRuleType] = useState(rule?.rule_type || 'must_not_contain');
   const [entityType, setEntityType] = useState(rule?.entity_type || 'Transactions');
   const [targetField, setTargetField] = useState(rule?.target_field || 'description');
-  const [accountId, setAccountId] = useState(rule?.condition?.debit_account_id || '');
-  const [accountIdLike, setAccountIdLike] = useState(rule?.condition?.debit_account_id_like || '');
   const [keywords, setKeywords] = useState<string[]>(rule?.params?.keywords || []);
   const [keywordInput, setKeywordInput] = useState('');
   const [rangeMin, setRangeMin] = useState(rule?.params?.min ?? '');
@@ -42,6 +57,45 @@ export default function RuleEditor({ rule, onSave, onCancel }: any) {
   const [severity, setSeverity] = useState(rule?.severity || 'warning');
   const [isActive, setIsActive] = useState(rule?.is_active !== false);
   const [saving, setSaving] = useState(false);
+  const [conditions, setConditions] = useState<ConditionItem[]>([]);
+
+  // Загрузка условий из правила (поддержка старого и нового формата)
+  useEffect(() => {
+    if (!rule?.condition) {
+      setConditions([]);
+      return;
+    }
+    const cond = rule.condition;
+
+    // Новый формат
+    if (cond.and && Array.isArray(cond.and)) {
+      setConditions(cond.and);
+      return;
+    }
+    if (cond.or && Array.isArray(cond.or)) {
+      setConditions(cond.or);
+      return;
+    }
+
+    // Старый формат — конвертируем
+    const converted: ConditionItem[] = [];
+    for (const [key, value] of Object.entries(cond)) {
+      if (key.endsWith('_like')) {
+        converted.push({ field: key.replace(/_like$/, ''), op: 'like', value });
+      } else if (key.endsWith('_not_like')) {
+        converted.push({ field: key.replace(/_not_like$/, ''), op: 'not_like', value });
+      } else if (key.endsWith('_in')) {
+        converted.push({ field: key.replace(/_in$/, ''), op: 'in', value });
+      } else if (key.endsWith('_not_in')) {
+        converted.push({ field: key.replace(/_not_in$/, ''), op: 'not_in', value });
+      } else if (key.endsWith('_neq')) {
+        converted.push({ field: key.replace(/_neq$/, ''), op: 'neq', value });
+      } else {
+        converted.push({ field: key, op: 'eq', value });
+      }
+    }
+    setConditions(converted);
+  }, [rule]);
 
   const addKeyword = () => {
     const k = keywordInput.trim().toLowerCase();
@@ -58,10 +112,29 @@ export default function RuleEditor({ rule, onSave, onCancel }: any) {
   const handleSave = async () => {
     if (!name.trim()) { alert('Введите название'); return; }
 
-    const condition: any = {};
-    if (accountId) condition.debit_account_id = accountId;
-    if (accountIdLike) condition.debit_account_id_like = accountIdLike;
+    // Валидация условий
+    for (let i = 0; i < conditions.length; i++) {
+      const c = conditions[i];
+      if (!c.field || !c.op) {
+        alert(`Условие ${i + 1}: заполните поле и оператор`);
+        return;
+      }
+      if ((c.op === 'in' || c.op === 'not_in') && (!Array.isArray(c.value) || c.value.length === 0)) {
+        alert(`Условие ${i + 1}: добавьте хотя бы одно значение`);
+        return;
+      }
+      if (c.op !== 'in' && c.op !== 'not_in' && (c.value === '' || c.value == null)) {
+        alert(`Условие ${i + 1}: заполните значение`);
+        return;
+      }
+    }
 
+    // Собираем condition
+    const condition = conditions.length > 0
+      ? { and: conditions }
+      : {};
+
+    // Параметры
     const params: any = {};
     if (ruleType === 'must_contain' || ruleType === 'must_not_contain') {
       if (keywords.length === 0) { alert('Добавьте хотя бы одно ключевое слово'); return; }
@@ -96,7 +169,7 @@ export default function RuleEditor({ rule, onSave, onCancel }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-auto">
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto">
         <div className="px-6 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">
             {isEdit ? 'Редактировать правило' : 'Новое правило'}
@@ -148,38 +221,23 @@ export default function RuleEditor({ rule, onSave, onCancel }: any) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Поле</label>
-            <input
+            <label className="block text-sm font-medium text-gray-700 mb-1">Проверяемое поле</label>
+            <select
               value={targetField}
               onChange={(e) => setTargetField(e.target.value)}
-              placeholder="description | amount_rub | ..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
-            />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
+              {TARGET_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
           </div>
 
-          <div className="border-t border-gray-100 pt-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">Условие применения</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Точный счёт (debit_account_id =)</label>
-                <input
-                  value={accountId}
-                  onChange={(e) => { setAccountId(e.target.value); setAccountIdLike(''); }}
-                  placeholder="acc-out-training"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Или шаблон (debit_account_id LIKE)</label>
-                <input
-                  value={accountIdLike}
-                  onChange={(e) => { setAccountIdLike(e.target.value); setAccountId(''); }}
-                  placeholder="acc-out-%"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
-                />
-              </div>
-            </div>
-          </div>
+          {/* Условия */}
+          <ConditionEditor
+            conditions={conditions}
+            onChange={setConditions}
+            accounts={accounts}
+            entityType={entityType}
+          />
 
           {needsKeywords && (
             <div className="border-t border-gray-100 pt-4">
