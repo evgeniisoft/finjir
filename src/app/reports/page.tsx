@@ -14,6 +14,7 @@ import {
   getLastYearRange,
   type PeriodType,
 } from "@/lib/utils/period";
+import ForecastView from "./forecast-view";
 
 export default function ReportsPage() {
   // ============================================
@@ -669,27 +670,13 @@ export default function ReportsPage() {
                   />
                 ))}
 
-              {activeTab === "gaps" && viewMode === "consolidated" && (
-                <CashGapsView
-                  transactions={transactions}
-                  companies={companies}
+              {activeTab === "gaps" && (
+                <ForecastView
+                  viewMode={viewMode}
                   companyId={null}
-                  accounts={accounts}
-                  counterparties={counterparties}
+                  companies={companies}
                 />
               )}
-              {activeTab === "gaps" &&
-                viewMode === "by_company" &&
-                companies.map((company: any) => (
-                  <CashGapsView
-                    key={company.id}
-                    transactions={transactions}
-                    companies={companies}
-                    companyId={company.id}
-                    accounts={accounts}
-                    counterparties={counterparties}
-                  />
-                ))}
             </>
           )}
         </div>
