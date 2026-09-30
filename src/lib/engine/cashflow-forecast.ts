@@ -472,27 +472,51 @@ export class CashflowForecastEngine {
         }
 
         // Квартальные — только в конце квартала.
-        // Считаем налог за ВЕСЬ квартал (3 месяца), не за 1 месяц.
+        // Накопительный расчёт: 
+        //   Q1 = calc(yearStart, 31.03)
+        //   Q2 = calc(yearStart, 30.06) − Q1
+        //   Q3 = calc(yearStart, 30.09) − Q1 − Q2
+        //   Q4 = calc(yearStart, 31.12) − Q1 − Q2 − Q3
+        // Так сумма за год совпадает с годовым расчётом.
         const isQuarterEnd = mm === 3 || mm === 6 || mm === 9 || mm === 12;
         if (isQuarterEnd) {
-          const quarterStartMonth = mm - 2; // 1-й месяц квартала
-          const quarterStart = `${yy}-${String(quarterStartMonth).padStart(2, '0')}-01`;
+          const yearStart = `${yy}-01-01`;
 
-          const quarterlyTaxCalc = taxEngine.calculateTax(
-            company, transactions, accounts, quarterStart, monthEnd,
+          // Накопительные расчёты до конца каждого квартала
+          const cumulativeTaxes: any[] = [];
+          for (const qEndMonth of [3, 6, 9, 12]) {
+            if (qEndMonth > mm) break;
+            const qLastDay = getLastDayOfMonth(yy, qEndMonth);
+            const qEnd = `${yy}-${String(qEndMonth).padStart(2, '0')}-${String(qLastDay).padStart(2, '0')}`;
+            cumulativeTaxes.push(
+              taxEngine.calculateTax(company, transactions, accounts, yearStart, qEnd),
+            );
+          }
+
+          // Текущий квартал = последний накопительный − предыдущие накопительные
+          const cumulativeCurrent = cumulativeTaxes[cumulativeTaxes.length - 1];
+          const cumulativePrev = cumulativeTaxes.slice(0, -1).reduce(
+            (acc, t) => ({
+              vat_to_pay: acc.vat_to_pay + t.vat_to_pay,
+              income_tax_amount: acc.income_tax_amount + t.income_tax_amount,
+            }),
+            { vat_to_pay: 0, income_tax_amount: 0 },
           );
 
-          if (quarterlyTaxCalc.vat_to_pay > 0) {
+          const quarterVat = Math.max(0, cumulativeCurrent.vat_to_pay - cumulativePrev.vat_to_pay);
+          const quarterIncomeTax = Math.max(0, cumulativeCurrent.income_tax_amount - cumulativePrev.income_tax_amount);
+
+          if (quarterVat > 0) {
             const payDate = getTaxPaymentDate(month, taxDays.vat, 1);
             if (payDate >= start_date && payDate <= end_date) {
               items.push(this.makeTaxItem(
                 company, payDate, 'НДС (за квартал)',
-                quarterlyTaxCalc.vat_to_pay, 'acc-tax-vat',
+                quarterVat, 'acc-tax-vat',
               ));
             }
           }
 
-          if (quarterlyTaxCalc.income_tax_amount > 0) {
+          if (quarterIncomeTax > 0) {
             const isOsno = company.tax_system === 'OSNO';
             const label = isOsno
               ? 'Налог на прибыль (за квартал)'
@@ -503,7 +527,7 @@ export class CashflowForecastEngine {
             if (payDate >= start_date && payDate <= end_date) {
               items.push(this.makeTaxItem(
                 company, payDate, label,
-                quarterlyTaxCalc.income_tax_amount, accId,
+                quarterIncomeTax, accId,
               ));
             }
           }
