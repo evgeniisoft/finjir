@@ -425,12 +425,20 @@ export class CashflowForecastEngine {
     const { transactions, accounts, companies, budgets, start_date, end_date, taxDays } = args;
     const items: ForecastItem[] = [];
 
-    // Список месяцев, покрывающих прогноз
+    // Список месяцев, покрывающих прогноз.
+    // ВАЖНО: сдвигаемся на 3 месяца НАЗАД — чтобы поймать налоги за прошлый
+    // квартал/месяц, которые платятся в месяце прогноза.
+    // Пример: прогноз с 01.10.2026, налоги за Q3 (июль-сентябрь) платятся
+    //         28.10.2026 → в прогнозе.
     const startMonth = start_date.substring(0, 7);
     const endMonth = end_date.substring(0, 7);
     const months: string[] = [];
     {
       let [y, m] = startMonth.split('-').map(Number);
+      // Сдвиг на 3 месяца назад
+      m -= 3;
+      while (m < 1) { m += 12; y -= 1; }
+
       const [ey, em] = endMonth.split('-').map(Number);
       while (y < ey || (y === ey && m <= em)) {
         months.push(`${y}-${String(m).padStart(2, '0')}`);
