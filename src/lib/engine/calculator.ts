@@ -95,6 +95,7 @@ export class FinancialCalculator {
     let investingOutflow = 0;
     let financingInflow = 0;
     let financingOutflow = 0;
+    let taxOutflow = 0;
 
     for (const t of filtered) {
       const debitAccount = accounts.find(a => a.id === t.debit_account_id);
@@ -125,7 +126,10 @@ export class FinancialCalculator {
 
       // Выбытие (деньги ушли с денежного счёта)
       if (creditIsCash && !debitIsCash) {
-        if (debitAccount.type === 'X' && !debitAccount.id.startsWith('acc-tax-')) {
+        // Налоговые платежи — в taxOutflow
+        if (debitAccount.id.startsWith('acc-tax-')) {
+          taxOutflow += t.amount_rub;
+        } else if (debitAccount.type === 'X') {
           operatingOutflow += t.amount_rub;
         } else if (debitAccount.activity_type === 'investing' || debitAccount.id === 'acc-out-capex') {
           investingOutflow += t.amount_rub;
@@ -142,12 +146,9 @@ export class FinancialCalculator {
       }
     }
 
-    // Налоговые выбытия из taxEngine
-    let taxOutflow = 0;
-    if (company) {
-      const taxCalc = taxEngine.calculateTax(company, transactions, accounts, periodStart, periodEnd);
-      taxOutflow = taxCalc.income_tax_amount + taxCalc.insurance_amount + taxCalc.ndfl_amount + taxCalc.vat_to_pay;
-    }
+    // Налоговые выбытия — из фактических транзакций acc-tax-*
+    // (taxScheduler создаёт их как fact/plan, они точнее расчёта taxEngine)
+    // taxOutflow уже накоплен в цикле выше
 
     const endingBalance = startingBalance +
       operatingInflow - operatingOutflow +
