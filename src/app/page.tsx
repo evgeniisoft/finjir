@@ -360,7 +360,12 @@ export default function Dashboard() {
 
       {/* Ряд 1 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-        <Widget id="cash" label="Деньги на счетах" value={totalCash}>
+        <Widget
+          id="cash"
+          label="Деньги на счетах"
+          value={totalCash}
+          color={totalCash < 0 ? "text-red-600" : "text-gray-900"}
+        >
           {companies.map((company: any) => {
             const companyAccounts = accounts.filter(
               (a) => a.is_cash_flow === "true" || a.is_cash_flow === true,
@@ -478,6 +483,7 @@ export default function Dashboard() {
           label="Рентабельность"
           value={margin.toFixed(1)}
           suffix="%"
+          color={margin < 0 ? "text-red-600" : "text-gray-900"}
         >
           {reportsArray.map((r) => {
             const rev = r.report?.revenue || 0;
@@ -495,7 +501,12 @@ export default function Dashboard() {
           })}
         </Widget>
 
-        <Widget id="ebitda" label="EBITDA" value={Math.round(ebitda)}>
+        <Widget
+          id="ebitda"
+          label="EBITDA"
+          value={Math.round(ebitda)}
+          color={ebitda < 0 ? "text-red-600" : "text-gray-900"}
+        >
           {reportsArray.map((r) => {
             const companyEBITDA =
               (r.report?.net_profit || 0) +
