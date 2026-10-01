@@ -36,7 +36,8 @@ export default function TransactionsPage() {
     account_id: '',
     category_id: '',
     counterparty_id: '',
-    source: 'manual'
+    source: 'manual',
+    record_type: 'fact' as 'fact' | 'plan',
   });
 
   useEffect(() => {
@@ -127,7 +128,7 @@ export default function TransactionsPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         tenant_id: 'tenant-1',
-        record_type: 'fact',
+        record_type: formData.record_type || 'fact',
         accrual_date: formData.date,
         import_hash: '',
         source_account_id: formData.type === 'income' ? '' : (formData.account_id || 'acc-bank-001'),
@@ -155,7 +156,8 @@ export default function TransactionsPage() {
       account_id: '',
       category_id: '',
       counterparty_id: '',
-      source: 'manual'
+      source: 'manual',
+      record_type: 'fact',
     });
   };
 
@@ -309,6 +311,23 @@ export default function TransactionsPage() {
                 <option value="expense">Расход</option>
                 <option value="transfer">Перемещение</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Тип записи
+              </label>
+              <select
+                value={formData.record_type}
+                onChange={(e) => setFormData({ ...formData, record_type: e.target.value as 'fact' | 'plan' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="fact">Факт (произошло)</option>
+                <option value="plan">План (ожидается)</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Факт — прошедшие операции. План — будущие.
+              </p>
             </div>
 
             <div>
