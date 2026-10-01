@@ -101,7 +101,7 @@ export default function Dashboard() {
         );
 
         const forecastRes = await fetch(
-          `/api/reports/cashflow-forecast?start_date=${today}&horizon_days=${horizon}&view=consolidated`,
+          `/api/reports/cashflow-forecast?start_date=${currentPeriod.start}&horizon_days=${horizon}&view=consolidated`,
         );
         if (forecastRes.ok) {
           const forecastData = await forecastRes.json();
@@ -659,7 +659,6 @@ export default function Dashboard() {
               <span className="text-base font-bold text-red-600">
                 {Math.round(totalTaxToPay).toLocaleString("ru-RU")} ₽
               </span>
-            </div>
             </div>
           </div>
 
