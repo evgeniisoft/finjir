@@ -577,62 +577,150 @@ export default function Dashboard() {
         <Widget
           id="taxes"
           label="Налоги"
-          value={totalIncomeTax}
-          suffix="₽ (5.2%)"
+          value={Math.round(totalIncomeTax + totalInsurance + totalNdf)}
+          suffix="₽ начислено"
         >
-          {totalTaxData.map((tax: any) => (
-            <div key={tax.company_id} className="mb-2">
-              <p className="text-xs font-medium text-gray-900">
-                {tax.company_name}
-              </p>
-              <div className="flex justify-between text-sm ml-3 py-1">
-                <span className="text-gray-600">Налог</span>
-                <span className="font-medium">
-                  {Number(tax.income_tax_amount || 0).toLocaleString("ru-RU")} ₽
-                </span>
-              </div>
-              <div className="flex justify-between text-sm ml-3 py-1">
-                <span className="text-gray-600">Взносы</span>
-                <span className="font-medium">
-                  {Number(tax.insurance_amount || 0).toLocaleString("ru-RU")} ₽
-                </span>
-              </div>
-              <div className="flex justify-between text-sm ml-3 py-1">
-                <span className="text-gray-600">НДФЛ</span>
-                <span className="font-medium">
-                  {tax.ndfl_amount?.toLocaleString("ru-RU") || 0} ₽
-                </span>
-              </div>
-            </div>
-          ))}
-          <div className="mt-3 pt-3 border-t border-gray-200">
-            <div className="flex justify-between text-sm py-1">
-              <span className="font-medium">Налоги</span>
-              <span className="font-bold">
-                {totalIncomeTax.toLocaleString("ru-RU")} ₽
-              </span>
-            </div>
-            <div className="flex justify-between text-sm py-1">
-              <span className="font-medium">Взносы</span>
-              <span className="font-bold">
-                {totalInsurance.toLocaleString("ru-RU")} ₽
-              </span>
-            </div>
-            <div className="flex justify-between text-sm py-1">
-              <span className="font-medium">НДФЛ</span>
-              <span className="font-bold">
-                {totalNdf.toLocaleString("ru-RU")} ₽
-              </span>
-            </div>
-            <div className="flex justify-between text-sm py-1 border-t mt-1">
-              <span className="font-semibold">Итого</span>
-              <span className="font-bold">
-                {(totalIncomeTax + totalInsurance + totalNdf).toLocaleString(
-                  "ru-RU",
-                )}{" "}
-                ₽
-              </span>
-            </div>
+          {/* === Блок 1: Начислено за период (из PnL) === */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+              Начислено за период
+            </p>
+            {totalTaxData.length === 0 ? (
+              <p className="text-xs text-gray-500">Нет данных</p>
+            ) : (
+              <>
+                {totalTaxData.map((tax: any) => (
+                  <div key={tax.company_id} className="mb-2">
+                    <p className="text-xs font-medium text-gray-900">
+                      {tax.company_name}
+                    </p>
+                    <div className="flex justify-between text-sm ml-3 py-1">
+                      <span className="text-gray-600">Налог</span>
+                      <span className="font-medium">
+                        {Number(tax.income_tax_amount || 0).toLocaleString("ru-RU")} ₽
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm ml-3 py-1">
+                      <span className="text-gray-600">Взносы</span>
+                      <span className="font-medium">
+                        {Number(tax.insurance_amount || 0).toLocaleString("ru-RU")} ₽
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm ml-3 py-1">
+                      <span className="text-gray-600">НДФЛ</span>
+                      <span className="font-medium">
+                        {tax.ndfl_amount?.toLocaleString("ru-RU") || 0} ₽
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  <div className="flex justify-between text-sm py-1">
+                    <span className="text-gray-600">Налоги</span>
+                    <span className="font-medium">{totalIncomeTax.toLocaleString("ru-RU")} ₽</span>
+                  </div>
+                  <div className="flex justify-between text-sm py-1">
+                    <span className="text-gray-600">Взносы</span>
+                    <span className="font-medium">{totalInsurance.toLocaleString("ru-RU")} ₽</span>
+                  </div>
+                  <div className="flex justify-between text-sm py-1">
+                    <span className="text-gray-600">НДФЛ</span>
+                    <span className="font-medium">{totalNdf.toLocaleString("ru-RU")} ₽</span>
+                  </div>
+                  <div className="flex justify-between text-sm py-1 border-t mt-1">
+                    <span className="font-semibold">Итого начислено</span>
+                    <span className="font-bold">
+                      {(totalIncomeTax + totalInsurance + totalNdf).toLocaleString("ru-RU")} ₽
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* === Блок 2: К уплате (из cashflow-forecast) === */}
+          <div className="pt-4 border-t-2 border-gray-200">
+            <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+              К уплате (прогноз 30 дней)
+            </p>
+            {(() => {
+              const taxItems = (forecast?.days || [])
+                .flatMap((d: any) =>
+                  (d.items || []).map((it: any) => ({ ...it, _date: d.date })),
+                )
+                .filter((it: any) => it.type === "tax");
+
+              if (taxItems.length === 0) {
+                return <p className="text-xs text-gray-500">Налогов к уплате нет</p>;
+              }
+
+              // Группируем по дате + описанию + компании
+              const groupedMap: Record<string, { date: string; label: string; company: string; amount: number }> = {};
+              for (const it of taxItems) {
+                const key = `${it._date}|${it.description}|${it.company_name}`;
+                if (!groupedMap[key]) {
+                  groupedMap[key] = {
+                    date: it._date,
+                    label: it.description,
+                    company: it.company_name,
+                    amount: 0,
+                  };
+                }
+                groupedMap[key].amount += Math.abs(it.amount);
+              }
+
+              const grouped = Object.values(groupedMap).sort((a, b) =>
+                a.date.localeCompare(b.date),
+              );
+              const total = grouped.reduce((s, g) => s + g.amount, 0);
+
+              // Группируем по дате для итога по дню
+              const byDate: Record<string, number> = {};
+              for (const g of grouped) {
+                byDate[g.date] = (byDate[g.date] || 0) + g.amount;
+              }
+
+              return (
+                <div className="space-y-2">
+                  {Object.entries(byDate)
+                    .sort()
+                    .map(([date, dayTotal]) => {
+                      const dayItems = grouped.filter((g) => g.date === date);
+                      const [y, m, dd] = date.split("-");
+                      const dateStr = `${dd}.${m}.${y}`;
+                      return (
+                        <div key={date}>
+                          <div className="flex justify-between text-xs font-medium text-gray-900 mt-2 mb-1">
+                            <span>{dateStr}</span>
+                            <span className="text-red-600">
+                              −{Math.round(dayTotal).toLocaleString("ru-RU")} ₽
+                            </span>
+                          </div>
+                          {dayItems.map((g, idx) => (
+                            <div key={idx} className="flex justify-between text-xs ml-3 py-0.5">
+                              <span className="text-gray-600">
+                                {g.label}
+                                {g.company && (
+                                  <span className="text-gray-400"> [{g.company}]</span>
+                                )}
+                              </span>
+                              <span className="text-red-600">
+                                −{Math.round(g.amount).toLocaleString("ru-RU")} ₽
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  <div className="flex justify-between text-sm pt-2 border-t border-gray-100 mt-2">
+                    <span className="font-semibold">Итого к уплате</span>
+                    <span className="font-bold text-red-600">
+                      −{Math.round(total).toLocaleString("ru-RU")} ₽
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </Widget>
         {/* Лимиты УСН — единый виджет */}
