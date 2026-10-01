@@ -265,7 +265,7 @@ class PostgresRepository implements Repository {
     }
     clean = normalizeInputDates(clean, entity);
     clean = normalizeInputBooleans(clean, entity);
-    // Обработка пустых строк → null для отдельных полей
+    // Для транзакций: пустой import_hash → null (иначе unique constraint падает)
     if (entity === "Transactions" && (!clean.import_hash || clean.import_hash === "")) {
       clean.import_hash = null;
     }
@@ -279,7 +279,6 @@ class PostgresRepository implements Repository {
     const row = await model.create({ data: clean });
     return normalizeDates(row, entity);
   }
-
   async update(entity: string, id: string, data: any): Promise<any> {
     const model = getModel(entity);
     let clean = { ...data };
@@ -316,7 +315,7 @@ class PostgresRepository implements Repository {
       }
       clean = normalizeInputDates(clean, entity);
       clean = normalizeInputBooleans(clean, entity);
-      // Транзакции: пустой import_hash → null (для уникальности)
+      // Для транзакций: пустой import_hash → null
       if (entity === "Transactions" && (!clean.import_hash || clean.import_hash === "")) {
         clean.import_hash = null;
       }
