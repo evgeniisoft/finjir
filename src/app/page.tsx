@@ -81,12 +81,27 @@ export default function Dashboard() {
       const usnLimitsData = await usnLimitsRes.json();
       setUsnLimits(Array.isArray(usnLimitsData) ? usnLimitsData : []);
 
-      // Загружаем прогноз кассовых разрывов на 30 дней (консолидированно)
+      // Загружаем прогноз кассовых разрывов — горизонт = длине выбранного периода
       try {
         setForecastLoading(true);
         const today = new Date().toISOString().split("T")[0];
+
+        // Считаем горизонт прогноза = длине периода дашборда (в днях)
+        const startMs = new Date(currentPeriod.start).getTime();
+        const endMs = new Date(currentPeriod.end).getTime();
+        const daysDiff = Math.max(
+          7,
+          Math.min(365, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1),
+        );
+
+        // Округляем к доступным пресетам API
+        const allowedHorizons = [7, 30, 90, 180, 365];
+        const horizon = allowedHorizons.reduce((prev, curr) =>
+          Math.abs(curr - daysDiff) < Math.abs(prev - daysDiff) ? curr : prev,
+        );
+
         const forecastRes = await fetch(
-          `/api/reports/cashflow-forecast?start_date=${today}&horizon_days=30&view=consolidated`,
+          `/api/reports/cashflow-forecast?start_date=${today}&horizon_days=${horizon}&view=consolidated`,
         );
         if (forecastRes.ok) {
           const forecastData = await forecastRes.json();
@@ -606,7 +621,9 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xs text-gray-500">К уплате (30 дн):</span>
+              <span className="text-xs text-gray-500">
+                К уплате{forecast?.params?.horizon_days ? ` (${forecast.params.horizon_days} дн)` : ''}:
+              </span>
               <span className="text-base font-bold text-red-600">
                 {(() => {
                   const taxItems = (forecast?.days || [])
