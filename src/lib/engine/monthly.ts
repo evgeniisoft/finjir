@@ -584,21 +584,17 @@ export class MonthlyEngine {
       }
 
       // Прибыль с учётом налогов
+      // ВАЖНО: taxCalc.insurance_amount для ИП уже включает ip_fixed_amount
+      // (см. tax.ts: insuranceAmount = ipFixedAmount + contributions).
+      // Повторно вычитать ip_fixed_amount нельзя — это даёт двойное вычитание.
       let profit = revenue - expenses;
       if (taxCalc && reportType === "pnl") {
-        const isIndividual =
-          Boolean(company?.is_individual) ||
-          String(company?.is_individual).toLowerCase() === "true";
-
-        const ipFixed = isIndividual ? taxCalc.ip_fixed_amount || 0 : 0;
-
         profit =
           revenue -
           expenses -
           taxCalc.income_tax_amount -
           taxCalc.insurance_amount -
-          taxCalc.ndfl_amount -
-          ipFixed;
+          taxCalc.ndfl_amount;
       }
 
       const startingBalanceForPeriod = runningBalance;
