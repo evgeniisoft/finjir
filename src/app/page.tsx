@@ -905,90 +905,94 @@ export default function Dashboard() {
               ))}
             </div>
           </Widget>
-          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">
-                Кассовые разрывы (30 дней)
-              </h3>
-              <a
-                href="/reports?tab=gaps"
-                className="text-xs text-blue-600 hover:text-blue-700"
-              >
-                Подробнее →
-              </a>
-            </div>
-
-            {forecastLoading ? (
-              <p className="text-sm text-gray-500">Загрузка прогноза...</p>
-            ) : !forecast ? (
-              <p className="text-sm text-gray-500">
-                Не удалось загрузить прогноз
-              </p>
-            ) : forecast.gaps.length === 0 ? (
-              <>
-                <p className="text-green-600 font-medium mb-2">
-                  ✅ Нет разрывов
-                </p>
-                <div className="text-xs text-gray-500 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Остаток на начало</span>
-                    <span className="font-medium text-gray-900">
-                      {Math.round(forecast.starting_balance).toLocaleString(
-                        "ru-RU",
-                      )}{" "}
-                      ₽
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Остаток на конец</span>
-                    <span className="font-medium text-gray-900">
-                      {Math.round(forecast.ending_balance).toLocaleString(
-                        "ru-RU",
-                      )}{" "}
-                      ₽
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Выбытия за 30 дней</span>
-                    <span className="font-medium text-red-600">
-                      −
-                      {Math.round(forecast.total_outflow).toLocaleString(
-                        "ru-RU",
-                      )}{" "}
-                      ₽
-                    </span>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="text-red-600 font-medium mb-2">
-                  ⚠ {forecast.gaps.length}{" "}
-                  {forecast.gaps.length === 1 ? "разрыв" : "разрывов"}
-                </p>
-                <div className="space-y-1">
-                  {forecast.gaps.slice(0, 5).map((gap: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="flex justify-between text-sm text-red-600 py-1"
-                    >
-                      <span className="text-xs">{gap.date}</span>
-                      <span className="font-medium">
-                        −{Math.round(gap.max_deficit).toLocaleString("ru-RU")} ₽
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                {forecast.gaps.length > 5 && (
-                  <p className="text-xs text-gray-400 mt-2 text-center">
-                    и ещё {forecast.gaps.length - 5}...
-                  </p>
-                )}
-              </>
-            )}
-          </div>
         </div>
       )}
+
+      {/* Кассовые разрывы — всегда, независимо от totalVat */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900">
+              Кассовые разрывы (30 дней)
+            </h3>
+            <a
+              href="/reports?tab=gaps"
+              className="text-xs text-blue-600 hover:text-blue-700"
+            >
+              Подробнее →
+            </a>
+          </div>
+
+          {forecastLoading ? (
+            <p className="text-sm text-gray-500">Загрузка прогноза...</p>
+          ) : !forecast ? (
+            <p className="text-sm text-gray-500">
+              Не удалось загрузить прогноз
+            </p>
+          ) : forecast.gaps.length === 0 ? (
+            <>
+              <p className="text-green-600 font-medium mb-2">
+                ✅ Нет разрывов
+              </p>
+              <div className="text-xs text-gray-500 space-y-1">
+                <div className="flex justify-between">
+                  <span>Остаток на начало</span>
+                  <span className="font-medium text-gray-900">
+                    {Math.round(forecast.starting_balance).toLocaleString(
+                      "ru-RU",
+                    )}{" "}
+                    ₽
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Остаток на конец</span>
+                  <span className="font-medium text-gray-900">
+                    {Math.round(forecast.ending_balance).toLocaleString(
+                      "ru-RU",
+                    )}{" "}
+                    ₽
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Выбытия за 30 дней</span>
+                  <span className="font-medium text-red-600">
+                    −
+                    {Math.round(forecast.total_outflow).toLocaleString(
+                      "ru-RU",
+                    )}{" "}
+                    ₽
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-red-600 font-medium mb-2">
+                ⚠ {forecast.gaps.length}{" "}
+                {forecast.gaps.length === 1 ? "разрыв" : "разрывов"}
+              </p>
+              <div className="space-y-1">
+                {forecast.gaps.slice(0, 5).map((gap: any, idx: number) => (
+                  <div
+                    key={idx}
+                    className="flex justify-between text-sm text-red-600 py-1"
+                  >
+                    <span className="text-xs">{gap.date}</span>
+                    <span className="font-medium">
+                      −{Math.round(gap.max_deficit).toLocaleString("ru-RU")} ₽
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {forecast.gaps.length > 5 && (
+                <p className="text-xs text-gray-400 mt-2 text-center">
+                  и ещё {forecast.gaps.length - 5}...
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Алерты */}
       {(unclassifiedTx.length > 0 || totalAR > 0 || totalAP > 0) && (
