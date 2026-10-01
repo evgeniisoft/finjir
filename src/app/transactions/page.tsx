@@ -3,6 +3,28 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 
+// ============================================
+// Утилиты
+// ============================================
+
+function formatDate(date: any): string {
+  if (!date) return '—';
+  const str = typeof date === 'string' ? date.split('T')[0] : '';
+  const [y, m, d] = str.split('-');
+  if (!y || !m || !d) return String(date);
+  return `${d}.${m}.${y}`;
+}
+
+function canEdit(transaction: any): boolean {
+  // Редактируем только ручные операции
+  return transaction?.source === 'manual';
+}
+
+function canDelete(transaction: any): boolean {
+  // Удалять можно все, но с подтверждением
+  return true;
+}
+
 export default function TransactionsPage() {
   // Данные
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -14,7 +36,8 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Фильтры
   const [filters, setFilters] = useState({
@@ -54,10 +77,10 @@ export default function TransactionsPage() {
         api.getAll('Counterparties')
       ]);
 
-      setTransactions(transactionsData);
-      setCompanies(companiesData);
-      setAccounts(accountsData);
-      setCounterparties(counterpartiesData);
+      setTransactions(Array.isArray(transactionsData) ? transactionsData : []);
+      setCompanies(Array.isArray(companiesData) ? companiesData : []);
+      setAccounts(Array.isArray(accountsData) ? accountsData : []);
+      setCounterparties(Array.isArray(counterpartiesData) ? counterpartiesData : []);
       setError(null);
     } catch (err) {
       setError('Ошибка при загрузке данных');
@@ -67,12 +90,12 @@ export default function TransactionsPage() {
     }
   };
 
-  // Получение денежных счетов (для выбора)
+  // Денежные счета
   const cashAccounts = accounts.filter(a =>
     a.is_cash_flow === true || a.is_cash_flow === 'true' || a.is_cash_flow === 'TRUE'
   );
 
-  // Получение статей доходов/расходов
+  // Статьи доходов/расходов
   const incomeAccounts = accounts.filter(a => a.type === 'I');
   const expenseAccounts = accounts.filter(a => a.type === 'X');
 
@@ -86,16 +109,17 @@ export default function TransactionsPage() {
     return true;
   });
 
+  // ============================================
+  // Создание / Редактирование
+  // ============================================
+
   const handleCreate = async () => {
     try {
-      // Валидация
       if (!formData.company_id) { alert('Выберите компанию'); return; }
       if (!formData.amount || parseFloat(formData.amount) <= 0) { alert('Введите сумму'); return; }
       if (!formData.description.trim()) { alert('Введите описание'); return; }
 
-      // Определяем счета
       let debitAccountId, creditAccountId;
-
       if (formData.type === 'income') {
         debitAccountId = formData.account_id || cashAccounts[0]?.id;
         creditAccountId = formData.category_id || incomeAccounts[0]?.id;
@@ -103,12 +127,11 @@ export default function TransactionsPage() {
         debitAccountId = formData.category_id || expenseAccounts[0]?.id;
         creditAccountId = formData.account_id || cashAccounts[0]?.id;
       } else {
-        // Перемещение между счетами
         debitAccountId = formData.account_id;
         creditAccountId = formData.category_id;
       }
 
-      const newTransaction = {
+      const tx = {
         date: formData.date,
         company_id: formData.company_id,
         description: formData.description.trim(),
@@ -123,25 +146,110 @@ export default function TransactionsPage() {
         transaction_group_id: '',
         is_system: false,
         external_id: '',
-        source: formData.source,
+        source: formData.source || 'manual',
         deleted_at: null,
-        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         tenant_id: 'tenant-1',
         record_type: formData.record_type || 'fact',
         accrual_date: formData.date,
-        import_hash: '',
         source_account_id: formData.type === 'income' ? '' : (formData.account_id || 'acc-bank-001'),
         destination_account_id: formData.type === 'income' ? (formData.account_id || 'acc-bank-001') : '',
       };
 
-      await api.create('Transactions', newTransaction);
+      setSaving(true);
+
+      if (editingId) {
+        await api.update('Transactions', editingId, tx);
+      } else {
+        await api.create('Transactions', {
+          ...tx,
+          import_hash: '',
+          created_at: new Date().toISOString(),
+        });
+      }
+
       setShowForm(false);
+      setEditingId(null);
       resetForm();
-      loadData();
+      await loadData();
     } catch (err) {
-      console.error('Ошибка создания:', err);
-      alert('Ошибка при создании операции');
+      console.error('Ошибка сохранения:', err);
+      alert('Ошибка при сохранении операции');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (transaction: any) => {
+    if (!canEdit(transaction)) {
+      alert('Импортированные операции нельзя редактировать. Их можно только удалить.');
+      return;
+    }
+
+    // Разбираем счёт и статью из транзакции
+    let accountId = '';
+    let categoryId = '';
+    if (transaction.type === 'income') {
+      accountId = transaction.debit_account_id;
+      categoryId = transaction.credit_account_id;
+    } else if (transaction.type === 'expense') {
+      accountId = transaction.credit_account_id;
+      categoryId = transaction.debit_account_id;
+    } else {
+      accountId = transaction.debit_account_id;
+      categoryId = transaction.credit_account_id;
+    }
+
+    setFormData({
+      date: transaction.date?.split('T')[0] || '',
+      description: transaction.description || '',
+      amount: String(transaction.amount_rub || transaction.amount || ''),
+      currency: transaction.currency || 'RUB',
+      type: transaction.type || 'income',
+      company_id: transaction.company_id || '',
+      account_id: accountId,
+      category_id: categoryId,
+      counterparty_id: transaction.counterparty_id || '',
+      source: transaction.source || 'manual',
+      record_type: (transaction.record_type || 'fact') as 'fact' | 'plan',
+    });
+
+    setEditingId(transaction.id);
+    setShowForm(true);
+
+    // Скролл к форме
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 50);
+  };
+
+  const handleDelete = async (transaction: any) => {
+    if (!canDelete(transaction)) {
+      alert('Эту операцию нельзя удалить.');
+      return;
+    }
+
+    const dateStr = formatDate(transaction.date);
+    const amountStr = Math.round(Number(transaction.amount_rub || transaction.amount || 0))
+      .toLocaleString('ru-RU');
+
+    const confirmed = window.confirm(
+      `Удалить операцию?\n\n` +
+      `Дата: ${dateStr}\n` +
+      `Описание: ${transaction.description}\n` +
+      `Сумма: ${amountStr} ₽\n\n` +
+      `ВНИМАНИЕ: удаление повлияет на отчёты, диагностику и прогноз. ` +
+      `Действие необратимо.`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await api.delete('Transactions', transaction.id);
+      await loadData();
+    } catch (err) {
+      console.error('Ошибка удаления:', err);
+      alert('Ошибка при удалении операции');
     }
   };
 
@@ -159,6 +267,7 @@ export default function TransactionsPage() {
       source: 'manual',
       record_type: 'fact',
     });
+    setEditingId(null);
   };
 
   const resetFilters = () => {
@@ -171,14 +280,16 @@ export default function TransactionsPage() {
     });
   };
 
+  // ============================================
+  // Рендер
+  // ============================================
+
   return (
     <div>
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Операции</h2>
-          <p className="text-gray-500 mt-1">
-            Журнал финансовых операций
-          </p>
+          <p className="text-gray-500 mt-1">Журнал финансовых операций</p>
         </div>
         <button
           onClick={() => {
@@ -266,7 +377,7 @@ export default function TransactionsPage() {
       {showForm && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-lg p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Новая операция
+            {editingId ? 'Редактирование операции' : 'Новая операция'}
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -377,7 +488,6 @@ export default function TransactionsPage() {
                 inputMode="decimal"
                 value={formData.amount ? Number(formData.amount).toLocaleString('ru-RU') : ''}
                 onChange={(e) => {
-                  // Убираем всё, кроме цифр, точки и запятой
                   const raw = e.target.value.replace(/[^\d.,]/g, '').replace(',', '.');
                   setFormData({ ...formData, amount: raw });
                 }}
@@ -392,9 +502,7 @@ export default function TransactionsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Валюта
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Валюта</label>
               <select
                 value={formData.currency}
                 onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
@@ -408,9 +516,7 @@ export default function TransactionsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Контрагент
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Контрагент</label>
               <select
                 value={formData.counterparty_id}
                 onChange={(e) => setFormData({ ...formData, counterparty_id: e.target.value })}
@@ -439,13 +545,18 @@ export default function TransactionsPage() {
             <div className="md:col-span-2 flex gap-3 pt-4">
               <button
                 onClick={handleCreate}
-                className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+                disabled={saving}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
               >
-                Создать операцию
+                {saving ? 'Сохранение...' : editingId ? 'Сохранить изменения' : 'Создать операцию'}
               </button>
               <button
-                onClick={() => { setShowForm(false); resetForm(); }}
-                className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200"
+                onClick={() => {
+                  setShowForm(false);
+                  resetForm();
+                }}
+                disabled={saving}
+                className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
               >
                 Отмена
               </button>
@@ -467,25 +578,33 @@ export default function TransactionsPage() {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Дата</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Компания</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Описание</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Сумма</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Сумма</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Тип</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Действия</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filteredTransactions.map((transaction) => {
                 const company = companies.find(c => c.id === transaction.company_id);
+                const editable = canEdit(transaction);
+                const deletable = canDelete(transaction);
                 return (
-                  <tr
-                    key={transaction.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => setSelectedTransaction(selectedTransaction?.id === transaction.id ? null : transaction)}
-                  >
-                    <td className="px-6 py-4 text-sm text-gray-900">{transaction.date}</td>
+                  <tr key={transaction.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">
+                      {formatDate(transaction.date)}
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {company ? company.name : transaction.company_id}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{transaction.description}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {transaction.description}
+                      {transaction.record_type === 'plan' && (
+                        <span className="ml-2 inline-flex px-1.5 py-0.5 rounded text-xs bg-yellow-100 text-yellow-700">
+                          план
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900 text-right whitespace-nowrap">
                       {parseFloat(transaction.amount)?.toLocaleString('ru-RU')} {transaction.currency}
                     </td>
                     <td className="px-6 py-4">
@@ -497,6 +616,31 @@ export default function TransactionsPage() {
                         }`}>
                         {transaction.type === 'income' ? 'Доход' : transaction.type === 'expense' ? 'Расход' : 'Перемещение'}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => handleEdit(transaction)}
+                        disabled={!editable}
+                        title={editable ? 'Изменить' : 'Импортированные операции нельзя редактировать'}
+                        className={`text-xs font-medium mr-3 ${
+                          editable
+                            ? 'text-blue-600 hover:text-blue-700'
+                            : 'text-gray-300 cursor-not-allowed'
+                        }`}
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        onClick={() => handleDelete(transaction)}
+                        disabled={!deletable}
+                        className={`text-xs font-medium ${
+                          deletable
+                            ? 'text-red-600 hover:text-red-700'
+                            : 'text-gray-300 cursor-not-allowed'
+                        }`}
+                      >
+                        Удалить
+                      </button>
                     </td>
                   </tr>
                 );
