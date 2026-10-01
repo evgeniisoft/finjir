@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   try {
     const user = await getSessionUser(request);
     if (!user) {
-      { error: 'Не авторизован' }, { status: 401 });
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
     }
 
     const url = new URL(request.url);
