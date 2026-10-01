@@ -276,6 +276,38 @@ export default function Dashboard() {
     );
   }
 
+  // ============================================
+  // Налоговые транзакции за выбранный период
+  // ============================================
+  const periodStart = period.start;
+  const periodEnd = period.end;
+
+  const taxTransactions = transactions
+    .filter((t: any) => {
+      const dateStr = getDateStr(t.date);
+      return (
+        String(t.debit_account_id || '').startsWith('acc-tax-') &&
+        dateStr >= periodStart &&
+        dateStr <= periodEnd
+      );
+    })
+    .sort((a: any, b: any) =>
+      getDateStr(a.date).localeCompare(getDateStr(b.date)),
+    );
+
+  // Группируем по дате
+  const taxByDate: Record<string, any[]> = {};
+  for (const t of taxTransactions) {
+    const dateStr = getDateStr(t.date);
+    if (!taxByDate[dateStr]) taxByDate[dateStr] = [];
+    taxByDate[dateStr].push(t);
+  }
+
+  const totalTaxToPay = taxTransactions.reduce(
+    (s: number, t: any) => s + Math.abs(Number(t.amount_rub || t.amount || 0)),
+    0,
+  );
+
   const Widget = ({
     id,
     label,
@@ -622,18 +654,12 @@ export default function Dashboard() {
             </div>
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-xs text-gray-500">
-                К уплате{forecast?.params?.horizon_days ? ` (${forecast.params.horizon_days} дн)` : ''}:
+                К уплате за период:
               </span>
               <span className="text-base font-bold text-red-600">
-                {(() => {
-                  const taxItems = (forecast?.days || [])
-                    .flatMap((d: any) => d.items || [])
-                    .filter((it: any) => it.type === 'tax');
-                  return Math.round(
-                    taxItems.reduce((s: number, it: any) => s + Math.abs(it.amount), 0),
-                  ).toLocaleString('ru-RU');
-                })()} ₽
+                {Math.round(totalTaxToPay).toLocaleString("ru-RU")} ₽
               </span>
+            </div>
             </div>
           </div>
 
@@ -686,81 +712,75 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* === К уплате === */}
-              <div className="pt-3 border-t-2 border-gray-200">
-                <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
-                  К уплате (прогноз 30 дней)
-                </p>
-                {(() => {
-                  const taxItems = (forecast?.days || [])
-                    .flatMap((d: any) =>
-                      (d.items || []).map((it: any) => ({ ...it, _date: d.date })),
-                    )
-                    .filter((it: any) => it.type === 'tax');
-
-                  if (taxItems.length === 0) {
-                    return <p className="text-xs text-gray-500">Налогов к уплате нет</p>;
-                  }
-
-                  const groupedMap: Record<string, { date: string; label: string; company: string; amount: number }> = {};
-                  for (const it of taxItems) {
-                    const key = `${it._date}|${it.description}|${it.company_name}`;
-                    if (!groupedMap[key]) {
-                      groupedMap[key] = {
-                        date: it._date,
-                        label: it.description,
-                        company: it.company_name,
-                        amount: 0,
-                      };
-                    }
-                    groupedMap[key].amount += Math.abs(it.amount);
-                  }
-
-                  const grouped = Object.values(groupedMap).sort((a, b) =>
-                    a.date.localeCompare(b.date),
-                  );
-
-                  const byDate: Record<string, number> = {};
-                  for (const g of grouped) {
-                    byDate[g.date] = (byDate[g.date] || 0) + g.amount;
-                  }
-
-                  return (
-                    <div className="space-y-2">
-                      {Object.entries(byDate)
-                        .sort()
-                        .map(([date, dayTotal]) => {
-                          const dayItems = grouped.filter((g) => g.date === date);
-                          const [y, m, dd] = date.split('-');
-                          const dateStr = `${dd}.${m}.${y}`;
-                          return (
-                            <div key={date}>
-                              <div className="flex justify-between text-xs font-medium text-gray-900 mt-2 mb-1">
-                                <span>{dateStr}</span>
+            {/* === Блок 2: К уплате за период (из транзакций acc-tax-*) === */}
+            <div className="pt-4 border-t-2 border-gray-200">
+              <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+                К уплате за период
+              </p>
+              {taxTransactions.length === 0 ? (
+                <p className="text-xs text-gray-500">Налоговых платежей за период нет</p>
+              ) : (
+                <div className="space-y-2">
+                  {Object.entries(taxByDate)
+                    .sort()
+                    .map(([date, items]) => {
+                      const dayTotal = items.reduce(
+                        (s: number, t: any) =>
+                          s + Math.abs(Number(t.amount_rub || t.amount || 0)),
+                        0,
+                      );
+                      const [y, m, dd] = date.split('-');
+                      const dateStr = `${dd}.${m}.${y}`;
+                      return (
+                        <div key={date}>
+                          <div className="flex justify-between text-xs font-medium text-gray-900 mt-2 mb-1">
+                            <span>{dateStr}</span>
+                            <span className="text-red-600">
+                              −{Math.round(dayTotal).toLocaleString('ru-RU')} ₽
+                            </span>
+                          </div>
+                          {items.map((t: any, idx: number) => {
+                            const company = companies.find(
+                              (c: any) => c.id === t.company_id,
+                            );
+                            return (
+                              <div
+                                key={idx}
+                                className="flex justify-between text-xs ml-3 py-0.5"
+                              >
+                                <span className="text-gray-600">
+                                  {t.description}
+                                  {company && (
+                                    <span className="text-gray-400">
+                                      {" "}
+                                      [{company.name}]
+                                    </span>
+                                  )}
+                                </span>
                                 <span className="text-red-600">
-                                  −{Math.round(dayTotal).toLocaleString('ru-RU')} ₽
+                                  −
+                                  {Math.round(
+                                    Math.abs(
+                                      Number(t.amount_rub || t.amount || 0),
+                                    ),
+                                  ).toLocaleString("ru-RU")}{" "}
+                                  ₽
                                 </span>
                               </div>
-                              {dayItems.map((g, idx) => (
-                                <div key={idx} className="flex justify-between text-xs ml-3 py-0.5">
-                                  <span className="text-gray-600">
-                                    {g.label}
-                                    {g.company && (
-                                      <span className="text-gray-400"> [{g.company}]</span>
-                                    )}
-                                  </span>
-                                  <span className="text-red-600">
-                                    −{Math.round(g.amount).toLocaleString('ru-RU')} ₽
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  );
-                })()}
-              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  <div className="flex justify-between text-sm pt-2 border-t border-gray-100 mt-2">
+                    <span className="font-semibold">Итого за период</span>
+                    <span className="font-bold text-red-600">
+                      −{Math.round(totalTaxToPay).toLocaleString("ru-RU")} ₽
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
             </div>
           )}
         </div>
