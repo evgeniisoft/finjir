@@ -374,10 +374,6 @@ function checkTaxConsistency(ctx: DiagnosticContext): DiagnosticCheck[] {
       totalPaid += amount;
     }
 
-    // 3. Сравнение
-    const diff = Math.abs(totalAccrued - totalPaid);
-    const diffPercent = totalAccrued > 0 ? (diff / totalAccrued) * 100 : 0;
-
     // Считаем план — ещё не оплачено
     let totalPlanned = 0;
     for (const t of ctx.transactions) {
@@ -391,6 +387,13 @@ function checkTaxConsistency(ctx: DiagnosticContext): DiagnosticCheck[] {
       totalPlanned += amount;
     }
 
+    // 3. Сравнение: accrued за год vs (fact + plan) за год.
+    // Причина: планировщик создаёт план на год вперёд (Q4, будущие месяцы).
+    // Сравнивать accrued только с fact — некорректно, т.к. план ещё не наступил.
+    const totalCovered = totalPaid + totalPlanned;
+    const diff = Math.abs(totalAccrued - totalCovered);
+    const diffPercent = totalAccrued > 0 ? (diff / totalAccrued) * 100 : 0;
+
     // Порог 20%
     if (totalAccrued > 0 && diffPercent > 20) {
       // Детализация по компаниям
@@ -403,10 +406,25 @@ function checkTaxConsistency(ctx: DiagnosticContext): DiagnosticCheck[] {
         diff_percent: number;
       }> = [];
 
+      // План по компаниям
+      const plannedByCompany: Record<string, number> = {};
+      for (const t of ctx.transactions) {
+        const txDate = String(t.date).split('T')[0];
+        if (txDate < yearStart || txDate > yearEnd) continue;
+        if (t.record_type !== 'plan') continue;
+        if (!String(t.debit_account_id || '').startsWith('acc-tax-')) continue;
+        if (String(t.is_deleted || '') === 'true') continue;
+        const amount = parseFloat(String(t.amount_rub || t.amount || 0));
+        const companyId = t.company_id || '';
+        plannedByCompany[companyId] = (plannedByCompany[companyId] || 0) + amount;
+      }
+
       for (const company of ctx.companies) {
         const accrued = accruedByCompany[company.id] || 0;
         const paid = paidByCompany[company.id] || 0;
-        const d = Math.abs(accrued - paid);
+        const planned = plannedByCompany[company.id] || 0;
+        const covered = paid + planned;
+        const d = Math.abs(accrued - covered);
         const dp = accrued > 0 ? (d / accrued) * 100 : 0;
         if (dp > 10) {
           companiesWithDiff.push({
@@ -440,11 +458,11 @@ function checkTaxConsistency(ctx: DiagnosticContext): DiagnosticCheck[] {
             type: 'key_value',
             items: [
               { label: 'Начислено (расчёт)', value: `${Math.round(totalAccrued).toLocaleString('ru-RU')} ₽` },
-              { label: 'Уплачено (факт)', value: `${Math.round(totalPaid).toLocaleString('ru-RU')} ₽`, color: 'yellow' as const },
-              { label: 'Расхождение', value: `${diffPercent.toFixed(1)}%`, color: 'yellow' as const },
-              { label: 'Отложено (plan)', value: `${Math.round(totalPlanned).toLocaleString('ru-RU')} ₽`, color: 'yellow' as const },
+              { label: 'Уплачено (факт)', value: `${Math.round(totalPaid).toLocaleString('ru-RU')} ₽`, color: 'green' as const },
+              { label: 'Запланировано (plan)', value: `${Math.round(totalPlanned).toLocaleString('ru-RU')} ₽`, color: 'green' as const },
+              { label: 'Расхождение', value: `${diffPercent.toFixed(1)}%`, color: diffPercent > 10 ? 'yellow' as const : 'green' as const },
             ],
-          },
+          },,
         }
       )];
     }
