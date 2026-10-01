@@ -212,14 +212,18 @@ export class TaxEngine {
     // ============================================
     // Страховые взносы: % от фактической зарплаты
     // ============================================
-    const insurance = this.calculateInsuranceFromPayroll(
-      company,
-      actualPayroll,
-      periodFraction,
-    );
+    // ИП без сотрудников: зарплатные транзакции — это выплаты себе,
+    // страховые = только фикс. взносы, НДФЛ = 0.
+    const isIndividual = Boolean(company.is_individual);
+    const hasEmployees =
+      Boolean(company.has_employees) || (company.monthly_payroll || 0) > 0;
 
-    // Для ИП: фикс. взносы + страховые с зарплаты (если есть сотрудники)
-    const insuranceAmount = company.is_individual
+    const insurance = (isIndividual && !hasEmployees)
+      ? { contributions: 0, ndfl: 0, rate: 0 }
+      : this.calculateInsuranceFromPayroll(company, actualPayroll, periodFraction);
+
+    // Для ИП: фикс. взносы + страховые с зарплаты (только если есть сотрудники)
+    const insuranceAmount = isIndividual
       ? ipFixedAmount + insurance.contributions
       : insurance.contributions;
 
