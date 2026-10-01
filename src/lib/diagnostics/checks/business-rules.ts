@@ -147,7 +147,6 @@ async function checkCashGaps(ctx: DiagnosticContext): Promise<DiagnosticCheck[]>
       horizon_days: HORIZON_DAYS,
       company_id: null,
       include_plan: true,
-      include_taxes: true,
     });
 
     const gaps = forecast.consolidated.gaps;
