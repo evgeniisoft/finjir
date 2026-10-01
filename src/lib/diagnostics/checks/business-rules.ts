@@ -462,7 +462,7 @@ function checkTaxConsistency(ctx: DiagnosticContext): DiagnosticCheck[] {
               { label: 'Запланировано (plan)', value: `${Math.round(totalPlanned).toLocaleString('ru-RU')} ₽`, color: 'green' as const },
               { label: 'Расхождение', value: `${diffPercent.toFixed(1)}%`, color: diffPercent > 10 ? 'yellow' as const : 'green' as const },
             ],
-          },,
+          },
         }
       )];
     }
