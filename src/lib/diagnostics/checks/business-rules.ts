@@ -28,6 +28,9 @@ export async function runBusinessRuleChecks(ctx: DiagnosticContext): Promise<Dia
   // 5.4 Дебиторка / Кредиторка
   checks.push(...checkARAP(ctx));
 
+  // 5.5 Сходимость налогов: начислено vs уплачено
+  checks.push(...checkTaxConsistency(ctx));
+
   return checks;
 }
 
@@ -318,4 +321,145 @@ function checkARAP(ctx: DiagnosticContext): DiagnosticCheck[] {
   }
 
   return checks;
+}
+// ============================================
+// 5.5 Сходимость налогов: начислено vs уплачено
+// ============================================
+function checkTaxConsistency(ctx: DiagnosticContext): DiagnosticCheck[] {
+  const id = 'tax_consistency';
+  try {
+    const currentYear = new Date().getFullYear().toString();
+    const yearStart = `${currentYear}-01-01`;
+    const yearEnd = `${currentYear}-12-31`;
+
+    // 1. Начислено через taxEngine (по каждой компании)
+    let totalAccrued = 0;
+    const accruedByCompany: Record<string, number> = {};
+
+    for (const company of ctx.companies) {
+      try {
+        const taxCalc = taxEngine.calculateTax(
+          company,
+          ctx.transactions,
+          ctx.accounts,
+          yearStart,
+          yearEnd,
+        );
+        const total =
+          (taxCalc.income_tax_amount || 0) +
+          (taxCalc.insurance_amount || 0) +
+          (taxCalc.ndfl_amount || 0) +
+          (taxCalc.vat_to_pay || 0);
+        accruedByCompany[company.id] = total;
+        totalAccrued += total;
+      } catch (e) {
+        // Пропускаем компании с ошибкой расчёта
+      }
+    }
+
+    // 2. Уплачено по факт-транзакциям acc-tax-*
+    let totalPaid = 0;
+    const paidByCompany: Record<string, number> = {};
+
+    for (const t of ctx.transactions) {
+      const txDate = String(t.date).split('T')[0];
+      if (txDate < yearStart || txDate > yearEnd) continue;
+      if (t.record_type !== 'fact') continue;
+      if (!String(t.debit_account_id || '').startsWith('acc-tax-')) continue;
+      if (String(t.is_deleted || '') === 'true') continue;
+
+      const amount = parseFloat(String(t.amount_rub || t.amount || 0));
+      const companyId = t.company_id || '';
+      paidByCompany[companyId] = (paidByCompany[companyId] || 0) + amount;
+      totalPaid += amount;
+    }
+
+    // 3. Сравнение
+    const diff = Math.abs(totalAccrued - totalPaid);
+    const diffPercent = totalAccrued > 0 ? (diff / totalAccrued) * 100 : 0;
+
+    // Считаем план — ещё не оплачено
+    let totalPlanned = 0;
+    for (const t of ctx.transactions) {
+      const txDate = String(t.date).split('T')[0];
+      if (txDate < yearStart || txDate > yearEnd) continue;
+      if (t.record_type !== 'plan') continue;
+      if (!String(t.debit_account_id || '').startsWith('acc-tax-')) continue;
+      if (String(t.is_deleted || '') === 'true') continue;
+
+      const amount = parseFloat(String(t.amount_rub || t.amount || 0));
+      totalPlanned += amount;
+    }
+
+    // Порог 20%
+    if (totalAccrued > 0 && diffPercent > 20) {
+      // Детализация по компаниям
+      const companiesWithDiff: Array<{
+        company_id: string;
+        company_name: string;
+        accrued: number;
+        paid: number;
+        diff: number;
+        diff_percent: number;
+      }> = [];
+
+      for (const company of ctx.companies) {
+        const accrued = accruedByCompany[company.id] || 0;
+        const paid = paidByCompany[company.id] || 0;
+        const d = Math.abs(accrued - paid);
+        const dp = accrued > 0 ? (d / accrued) * 100 : 0;
+        if (dp > 10) {
+          companiesWithDiff.push({
+            company_id: company.id,
+            company_name: company.name,
+            accrued: Math.round(accrued * 100) / 100,
+            paid: Math.round(paid * 100) / 100,
+            diff: Math.round(d * 100) / 100,
+            diff_percent: Math.round(dp * 10) / 10,
+          });
+        }
+      }
+
+      return [problemCheck(
+        id, LEVEL, CATEGORY, 'warning',
+        'Сходимость налогов',
+        `Начислено ${Math.round(totalAccrued).toLocaleString('ru-RU')} ₽ vs уплачено ${Math.round(totalPaid).toLocaleString('ru-RU')} ₽ (расхождение ${diffPercent.toFixed(1)}%)`,
+        {
+          count: companiesWithDiff.length,
+          details: {
+            total_accrued: totalAccrued,
+            total_paid: totalPaid,
+            total_planned: totalPlanned,
+            diff,
+            diff_percent: diffPercent,
+            by_company: companiesWithDiff,
+          },
+          reason: 'Сумма уплаченных налогов (acc-tax-*) расходится с расчётом taxEngine более чем на 10%',
+          recommendation: 'Проверьте, все ли налоги заведены транзакциями. Если часть налогов не оплачена — это нормально, но требует внимания.',
+          display: {
+            type: 'key_value',
+            items: [
+              { label: 'Начислено (расчёт)', value: `${Math.round(totalAccrued).toLocaleString('ru-RU')} ₽` },
+              { label: 'Уплачено (факт)', value: `${Math.round(totalPaid).toLocaleString('ru-RU')} ₽`, color: 'yellow' as const },
+              { label: 'Расхождение', value: `${diffPercent.toFixed(1)}%`, color: 'yellow' as const },
+              { label: 'Отложено (plan)', value: `${Math.round(totalPlanned).toLocaleString('ru-RU')} ₽`, color: 'yellow' as const },
+            ],
+          },
+        }
+      )];
+    }
+
+    return [okCheck(
+      id, LEVEL, CATEGORY,
+      'Сходимость налогов',
+      `Начислено ${Math.round(totalAccrued).toLocaleString('ru-RU')} ₽ ≈ уплачено ${Math.round(totalPaid).toLocaleString('ru-RU')} ₽`,
+    )];
+  } catch (e: any) {
+    return [problemCheck(
+      id, LEVEL, CATEGORY, 'warning',
+      'Сходимость налогов',
+      `Ошибка: ${e.message}`,
+      { reason: e.message },
+    )];
+  }
 }
