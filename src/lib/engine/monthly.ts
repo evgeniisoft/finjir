@@ -116,6 +116,7 @@ export class MonthlyEngine {
     }
 
     // Для cashflow — вычитаем налоги за все месяцы до ПЕРВОГО периода отчёта
+    // Налоги берём из фактических транзакций acc-tax-* (согласовано с calculator.calculateCashFlow)
     if (reportType === "cashflow" && company && sortedPeriods.length > 0) {
       const firstPeriod = sortedPeriods[0];
       const firstPeriodStart = this.getPeriodStartDate(firstPeriod, periodType);
@@ -153,42 +154,26 @@ export class MonthlyEngine {
       }
 
       for (const monthKey of monthsBeforeReport) {
-        const monthStart = `${monthKey}-01`;
-        const [y, m] = monthKey.split("-").map(Number);
-        const lastDay = new Date(y, m, 0).getDate();
-        const monthEnd = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+        // Налоги за месяцы до первого периода отчёта — из фактических транзакций acc-tax-*
+        for (const t of transactions) {
+          if (t.company_id !== companyId) continue;
+          const txDate =
+            typeof t.date === "string"
+              ? t.date.split("T")[0]
+              : String(t.date || "").split("T")[0];
+          if (!txDate.startsWith(monthKey)) continue;
 
-        const taxCalcBefore = taxEngine.calculateTax(
-          company,
-          transactions,
-          accounts,
-          monthStart,
-          monthEnd,
-        );
+          const debitAcc = accounts.find((a) => a.id === t.debit_account_id);
+          const creditAcc = accounts.find((a) => a.id === t.credit_account_id);
+          if (!debitAcc || !creditAcc) continue;
 
-        const monthNum = m;
-        const isQuarterEndBefore =
-          monthNum === 3 || monthNum === 6 || monthNum === 9 || monthNum === 12;
-        const isIndividualBefore =
-          Boolean(company?.is_individual) ||
-          String(company?.is_individual).toLowerCase() === "true";
+          const debitIsCash = Boolean(debitAcc.is_cash_flow);
+          const creditIsCash = Boolean(creditAcc.is_cash_flow);
 
-        const vatPayment = isQuarterEndBefore ? taxCalcBefore.vat_to_pay : 0;
-        const incomeTaxPayment = isQuarterEndBefore
-          ? taxCalcBefore.income_tax_amount
-          : 0;
-        const insurancePayment = taxCalcBefore.insurance_amount || 0;
-        const ndflPayment = taxCalcBefore.ndfl_amount || 0;
-        const ipFixedPayment = isIndividualBefore
-          ? taxCalcBefore.ip_fixed_amount || 0
-          : 0;
-
-        runningBalance -=
-          insurancePayment +
-          ndflPayment +
-          vatPayment +
-          incomeTaxPayment +
-          ipFixedPayment;
+          if (creditIsCash && !debitIsCash && debitAcc.id.startsWith("acc-tax-")) {
+            runningBalance -= t.amount_rub;
+          }
+        }
       }
     }
 
@@ -454,14 +439,19 @@ export class MonthlyEngine {
         }
 
         // ДДС: Выбытия — для cashflow НДС НЕ вычитается (кассовый метод)
+        // Налоговые платежи (acc-tax-*) — отдельно, не в cashOut
         if (creditIsCash && !debitIsCash) {
           const cashOutflowAmount = t.amount_rub;
-          cashOut += cashOutflowAmount;
+
+          if (!debitAccount.id.startsWith("acc-tax-")) {
+            cashOut += cashOutflowAmount;
+          }
 
           if (
             reportType === "cashflow" &&
             debitAccount.type === "X" &&
-            debitAccount.activity_type === "operating"
+            debitAccount.activity_type === "operating" &&
+            !debitAccount.id.startsWith("acc-tax-")
           ) {
             details[debitAccount.id] =
               (details[debitAccount.id] || 0) + cashOutflowAmount;
@@ -562,25 +552,21 @@ export class MonthlyEngine {
         }
       }
 
-      // Налоговые выбытия за период
+      // Налоговые выбытия за период — из фактических транзакций acc-tax-*
       let taxOutflow = 0;
-      if (taxCalc) {
-        const isIndividual =
-          Boolean(company?.is_individual) ||
-          String(company?.is_individual).toLowerCase() === "true";
+      for (const t of periodTransactions) {
+        const debitAccount = accounts.find((a) => a.id === t.debit_account_id);
+        const creditAccount = accounts.find(
+          (a) => a.id === t.credit_account_id,
+        );
+        if (!debitAccount || !creditAccount) continue;
 
-        const vatPayment = isQuarterEnd ? taxCalc.vat_to_pay : 0;
-        const incomeTaxPayment = isQuarterEnd ? taxCalc.income_tax_amount : 0;
-        const insurancePayment = taxCalc.insurance_amount || 0;
-        const ndflPayment = taxCalc.ndfl_amount || 0;
-        const ipFixedPayment = isIndividual ? taxCalc.ip_fixed_amount || 0 : 0;
+        const creditIsCash = Boolean(creditAccount.is_cash_flow);
+        const debitIsCash = Boolean(debitAccount.is_cash_flow);
 
-        taxOutflow =
-          insurancePayment +
-          ndflPayment +
-          vatPayment +
-          incomeTaxPayment +
-          ipFixedPayment;
+        if (creditIsCash && !debitIsCash && debitAccount.id.startsWith("acc-tax-")) {
+          taxOutflow += t.amount_rub;
+        }
       }
 
       // Прибыль с учётом налогов
