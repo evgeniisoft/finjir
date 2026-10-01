@@ -7,7 +7,6 @@
  *   &horizon_days=30               (7, 30, 90, 180, 365)
  *   &company_id=comp-test-1        (опционально — только по компании)
  *   &include_plan=true             (по умолчанию true)
- *   &include_taxes=true            (по умолчанию true)
  *   &view=consolidated|by_company|both  (по умолчанию both)
  */
 
@@ -23,7 +22,7 @@ export async function GET(request: NextRequest) {
   try {
     const user = await getSessionUser(request);
     if (!user) {
-      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+      { error: 'Не авторизован' }, { status: 401 });
     }
 
     const url = new URL(request.url);
@@ -48,7 +47,6 @@ export async function GET(request: NextRequest) {
     const company_id = url.searchParams.get('company_id') || null;
 
     const include_plan = url.searchParams.get('include_plan') !== 'false';
-    const include_taxes = url.searchParams.get('include_taxes') !== 'false';
 
     const view = url.searchParams.get('view') || 'both';
     if (!['consolidated', 'by_company', 'both'].includes(view)) {
@@ -81,7 +79,6 @@ export async function GET(request: NextRequest) {
             horizon_days,
             company_id,
             include_plan,
-            include_taxes,
           },
           consolidated: { days: [], gaps: [], starting_balance: 0, ending_balance: 0, total_inflow: 0, total_outflow: 0 },
           by_company: [],
@@ -103,7 +100,6 @@ export async function GET(request: NextRequest) {
       horizon_days,
       company_id,
       include_plan,
-      include_taxes,
     });
 
     // ============================================
