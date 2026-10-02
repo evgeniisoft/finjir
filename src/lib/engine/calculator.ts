@@ -229,13 +229,9 @@ export class FinancialCalculator {
         continue;
       }
 
-      // Амортизация — отдельно
+      // Амортизация — не облагается НДС, корректировка не применяется
       if (debitAccount.type === 'X' && debitAccount.id.startsWith('acc-depreciation-')) {
-        let expenseAmount = t.amount_rub || 0;
-        if (vatIncluded && vatRate > 0) {
-          expenseAmount = expenseAmount / (1 + vatRate);
-        }
-        depreciation += expenseAmount;
+        depreciation += t.amount_rub || 0;
         continue;
       }
 
