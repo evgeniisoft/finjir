@@ -677,6 +677,12 @@ export default function DataSourcesPage() {
                       <pre className="text-xs text-red-500 mt-1 whitespace-pre-wrap max-h-40 overflow-auto">{importResult.errors.slice(0, 20).join('\n')}</pre>
                     </details>
                   )}
+                  {importResult.warnings?.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="text-xs text-yellow-600 cursor-pointer">Предупреждения ({importResult.warnings.length})</summary>
+                      <pre className="text-xs text-yellow-700 mt-1 whitespace-pre-wrap max-h-40 overflow-auto">{importResult.warnings.slice(0, 20).join('\n')}</pre>
+                    </details>
+                  )}
                   <button onClick={() => handleRollback(importResult.batch_id)} className="mt-2 text-xs text-red-600 hover:text-red-800 underline">Откатить этот импорт</button>
                 </div>
               )}
