@@ -39,6 +39,7 @@ const ENTITY_TO_MODEL: Record<string, string> = {
   DataQualityRules: 'dataQualityRule',
   DataQualityExceptions: 'dataQualityException',
   DataQualityActionLogs: 'dataQualityActionLog',
+  FixedAssets: 'fixedAsset',
 };
 
 const MODEL_TO_TABLE: Record<string, string> = {
@@ -59,6 +60,7 @@ const MODEL_TO_TABLE: Record<string, string> = {
   dataQualityRule: 'data_quality_rules',
   dataQualityException: 'data_quality_exceptions',
   dataQualityActionLog: 'data_quality_action_log',
+  fixedAsset: 'fixed_assets',
 };
 
 function getModel(entity: string): any {
@@ -81,6 +83,7 @@ const DATE_FIELDS: Record<string, string[]> = {
   audit_log: ["timestamp"],
   exchange_rates: ["date"],
   journal_entries: ["date"],
+  fixed_assets: ["commissioning_date", "disposal_date", "deleted_at"],
 };
 const BOOLEAN_FIELDS: Record<string, string[]> = {
   companies: [
