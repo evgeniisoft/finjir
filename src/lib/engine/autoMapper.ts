@@ -51,11 +51,15 @@ const : { [target: string]: RegExp[] } = {
   vat_rate: [/ставка\s*ндс/i, /ндс.*ставка/i],
   vat_amount: [/сумм.*ндс/i, /ндс.*сумм/i, /^ндс$/i],
   accrual_date: [/дата\s*начисл/i, /accrual/i],
-  initial_cost: [/первоначальн/i, /балансов/i, /стоимост/i, /cost/i],
+  // === Основные средства ===
+  initial_cost: [/первоначальн/i, /балансов/i, /стоимост/i, /^стоимость/i],
   salvage_value: [/ликвидац/i, /salvage/i],
-  commissioning_date: [/ввод.*эксплуат/i, /дата.*ввод/i, /commissioning/i],
-  useful_life_months: [/срок.*полезн/i, /срок.*мес/i, /useful.*life/i, /спи/i],
+  commissioning_date: [/ввод.*эксплуат/i, /дата.*ввод/i, /commissioning/i, /принят.*учет/i],
+  useful_life_months: [/срок.*полезн/i, /срок.*мес/i, /useful.*life/i, /^спи$/i],
   depreciation_method: [/метод.*аморт/i, /способ.*аморт/i, /method/i],
+  inventory_number: [/инвентарн/i, /inventory/i, /^инв\.?\s*номер/i],
+  asset_group: [/группа.*ос/i, /группа.*учет/i, /asset.*group/i],
+  depreciation_group: [/амортизац.*групп/i, /depreciation.*group/i],
   asset_external_id: [/внешн.*ос/i, /код.*ос/i, /asset.*id/i],
 };
 
