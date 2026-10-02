@@ -103,9 +103,9 @@ export async function GET(request: NextRequest) {
             targetCompanies, transactions, accounts,
             periodStart, periodEnd
           ),
-          balance: consolidationEngine.consolidateBalanceSheet(
+          balance: await consolidationEngine.consolidateBalanceSheet(
             targetCompanies, transactions, accounts,
-            periodEnd
+            periodEnd, settings
           ),
         };
         return NextResponse.json(consolidated);
