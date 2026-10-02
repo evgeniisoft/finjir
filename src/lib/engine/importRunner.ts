@@ -25,6 +25,7 @@ export interface ImportRunResult {
   imported: number;
   skipped: number;
   errors: string[];
+  warnings: string[];
 }
 
 export async function runImport(
@@ -47,6 +48,7 @@ export async function runImport(
   const batch_id = crypto.randomUUID();
 
   const errors: string[] = [];
+  const warnings: string[] = [];
   let imported = 0;
   let skipped = 0;
 
@@ -385,6 +387,26 @@ export async function runImport(
         const monthKey = dateStr.substring(0, 7); // YYYY-MM
         const depHash = `depreciation-${asset.id}-${monthKey}`;
 
+        // ============================================
+        // МЯГКАЯ ПРОВЕРКА: амортизация должна начинаться
+        // с месяца, СЛЕДУЮЩЕГО за месяцем ввода в эксплуатацию.
+        // Если месяц амортизации ≤ месяц ввода — это подозрительно,
+        // но создаём (с warning), потому что 1С могла так настроить.
+        // ============================================
+        if (asset.commissioning_date) {
+          const commissioningDate = new Date(asset.commissioning_date);
+          const commissioningYM = `${commissioningDate.getUTCFullYear()}-${String(commissioningDate.getUTCMonth() + 1).padStart(2, "0")}`;
+
+          if (monthKey <= commissioningYM) {
+            errors.push(
+              `[WARN] Строка ${i + 2}: амортизация за ${monthKey} для ОС "${asset.name}" ` +
+              `(ввод в эксплуатацию ${commissioningYM}). ` +
+              `По правилу амортизация должна начинаться со следующего месяца. ` +
+              `Транзакция создана, но проверьте корректность.`,
+            );
+          }
+        }
+
         // Проверка plan→fact
         const existingTx = await prisma.transaction.findUnique({
           where: { import_hash: depHash },
@@ -453,6 +475,15 @@ export async function runImport(
   // ============================================
   // ЛОГ ИМПОРТА
   // ============================================
+  // Объединяем warnings в errors для лога (но статус — success, если ошибок нет)
+  const allMessages = [
+    ...errors.map((e) => e),
+    ...warnings.map((w) => w),
+  ];
+
+  const hasErrors = errors.length > 0;
+  const hasWarnings = warnings.length > 0;
+
   await prisma.importLog.create({
     data: {
       source_id: source.id,
@@ -463,9 +494,10 @@ export async function runImport(
       imported,
       skipped,
       errors_count: errors.length,
-      errors: errors.length > 0 ? JSON.stringify(errors.slice(0, 100)) : null,
-      status:
-        errors.length === 0 ? "success" : imported > 0 ? "partial" : "failed",
+      errors: allMessages.length > 0 ? JSON.stringify(allMessages.slice(0, 100)) : null,
+      status: hasErrors
+        ? imported > 0 ? "partial" : "failed"
+        : "success",
       finished_at: new Date(),
       user_id: user_id || null,
     },
@@ -477,5 +509,6 @@ export async function runImport(
     imported,
     skipped,
     errors,
+    warnings,
   };
 }
