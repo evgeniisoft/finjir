@@ -55,10 +55,34 @@ export async function runImport(
 
   // Предзагрузка хешей для дедупликации
   let existingHashes = new Set<string>();
+  // Справочник существующих ОС по external_id (для upsert)
+  let existingAssetsByExternalId = new Map<string, any>();
+
   if (targetType === "transactions") {
     const existing = await prisma.transaction.findMany({
       where: { import_hash: { not: null } },
       select: { import_hash: true },
+    });
+    existingHashes = new Set(
+      existing.map((t) => t.import_hash!).filter(Boolean),
+    );
+  } else if (targetType === "fixed_assets") {
+    const existing = await prisma.fixedAsset.findMany({
+      where: { is_deleted: { not: "true" } },
+    });
+    for (const a of existing) {
+      if (a.external_id) {
+        existingAssetsByExternalId.set(a.external_id, a);
+      }
+      if (a.import_hash) {
+        existingHashes.add(a.import_hash);
+      }
+    }
+  } else if (targetType === "depreciation_entries") {
+    // Загружаем существующие амортизационные транзакции (для upsert plan→fact)
+    const existing = await prisma.transaction.findMany({
+      where: { import_hash: { startsWith: "depreciation-" } },
+      select: { id: true, import_hash: true, record_type: true },
     });
     existingHashes = new Set(
       existing.map((t) => t.import_hash!).filter(Boolean),
@@ -233,6 +257,158 @@ export async function runImport(
         record.id = crypto.randomUUID();
         await prisma.account.create({ data: record });
         imported++;
+      } else if (targetType === "fixed_assets") {
+        // ============================================
+        // Импорт справочника ОС
+        // ============================================
+        if (!record.name) throw new Error("Нет наименования");
+        if (!record.initial_cost) throw new Error("Нет первоначальной стоимости");
+        if (!record.commissioning_date) throw new Error("Нет даты ввода");
+        if (!record.useful_life_months) throw new Error("Нет срока полезного использования");
+
+        const companyId = record.company_id || company_id;
+        if (!companyId) throw new Error("Нет company_id");
+        record.company_id = companyId;
+
+        // Дата
+        if (typeof record.commissioning_date === "string") {
+          record.commissioning_date = new Date(record.commissioning_date + "T00:00:00.000Z");
+        }
+
+        // Defaults
+        record.tenant_id = "tenant-1";
+        record.salvage_value = record.salvage_value || 0;
+        record.depreciation_method = record.depreciation_method || "straight_line";
+        record.account_id = record.account_id || "acc-fa-001";
+        record.depreciation_account_id = record.depreciation_account_id || "acc-depreciation-os";
+        record.status = record.status || "active";
+        record.source = source.type || "import";
+        record.is_deleted = "";
+        record.inventory_number = record.inventory_number || "";
+        record.asset_group = record.asset_group || "";
+        record.external_id = record.external_id || "";
+        if (record.depreciation_group) {
+          record.depreciation_group = Number(record.depreciation_group);
+        } else {
+          record.depreciation_group = null;
+        }
+
+        // import_hash
+        const faHash = record.external_id
+          ? `fa-${companyId}-${record.external_id}`
+          : makeImportHash(record, ["company_id", "name", "commissioning_date"]);
+        record.import_hash = faHash;
+
+        // UPSERT по external_id
+        const existingAsset = record.external_id
+          ? existingAssetsByExternalId.get(record.external_id)
+          : null;
+
+        if (existingAsset) {
+          // Обновляем существующее ОС
+          const updateData = { ...record };
+          delete updateData.id;
+          delete updateData.created_at;
+          delete updateData.import_hash;
+          await prisma.fixedAsset.update({
+            where: { id: existingAsset.id },
+            data: updateData,
+          });
+          imported++;
+        } else {
+          // Создаём новое
+          await prisma.fixedAsset.create({
+            data: {
+              ...record,
+              id: crypto.randomUUID(),
+            },
+          });
+          imported++;
+        }
+      } else if (targetType === "depreciation_entries") {
+        // ============================================
+        // Импорт амортизации ОС
+        // ============================================
+        if (!record.date) throw new Error("Нет даты");
+        if (!record.amount || record.amount <= 0) throw new Error("Некорректная сумма");
+
+        // Дата
+        if (typeof record.date === "string") {
+          record.date = new Date(record.date + "T00:00:00.000Z");
+        }
+
+        const companyId = record.company_id || company_id;
+        if (!companyId) throw new Error("Нет company_id");
+        record.company_id = companyId;
+
+        // Матчинг ОС по external_id
+        if (!record.asset_external_id) {
+          throw new Error("Нет asset_external_id (внешний ID ОС)");
+        }
+        const asset = existingAssetsByExternalId.get(record.asset_external_id);
+        if (!asset) {
+          throw new Error(`ОС с external_id "${record.asset_external_id}" не найдено в системе`);
+        }
+
+        // Формируем import_hash
+        const dateStr = record.date instanceof Date
+          ? record.date.toISOString().split("T")[0]
+          : String(record.date);
+        const monthKey = dateStr.substring(0, 7); // YYYY-MM
+        const depHash = `depreciation-${asset.id}-${monthKey}`;
+
+        // Проверка plan→fact
+        const existingTx = await prisma.transaction.findUnique({
+          where: { import_hash: depHash },
+          select: { id: true, record_type: true },
+        });
+
+        const txData = {
+          tenant_id: "tenant-1",
+          company_id: companyId,
+          date: record.date,
+          accrual_date: record.date,
+          description: record.description || `Амортизация ОС: ${asset.name} за ${monthKey}`,
+          amount: record.amount,
+          amount_rub: record.amount,
+          currency: "RUB",
+          type: "expense",
+          debit_account_id: asset.depreciation_account_id || "acc-depreciation-os",
+          credit_account_id: asset.account_id || "acc-fa-001",
+          record_type: "fact",  // импорт из 1С — всегда факт
+          source: source.type || "import",
+          counterparty_id: "",
+          contract_id: "",
+          transaction_group_id: "",
+          is_system: false,
+          external_id: record.external_id || "",
+          source_account_id: "",
+          destination_account_id: "",
+          is_deleted: "",
+          import_hash: depHash,
+          import_batch_id: batch_id,
+          updated_at: new Date(),
+        };
+
+        if (existingTx) {
+          if (existingTx.record_type === "plan") {
+            // UPSERT: plan → fact
+            await prisma.transaction.update({
+              where: { id: existingTx.id },
+              data: txData,
+            });
+            imported++;
+          } else {
+            // Уже fact — пропускаем
+            skipped++;
+          }
+        } else {
+          // Создаём новую fact-транзакцию
+          await prisma.transaction.create({
+            data: { ...txData, id: crypto.randomUUID(), created_at: new Date() },
+          });
+          imported++;
+        }
       } else {
         throw new Error(`Неизвестный target_type: ${targetType}`);
       }
