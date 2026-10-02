@@ -48,6 +48,7 @@ const HEADER_PATTERNS: { [target: string]: RegExp[] } = {
   kpp: [/кпп/i],
   name: [/назван/i, /наименован/i, /имя/i, /name/i],
   inventory_number: [/инвентарн/i, /inventory/i, /^инв\.?\s*номер/i, /инв\.?\s*№/i],
+  asset_external_id: [/внешн.*ос/i, /код.*ос/i, /asset.*id/i],
   external_id: [/внешн.*id/i, /external.*id/i, /^id$/i, /guid/i, /документ.*id/i, /номер.*документ/i],
   vat_rate: [/ставка\s*ндс/i, /ндс.*ставка/i],
   vat_amount: [/сумм.*ндс/i, /ндс.*сумм/i, /^ндс$/i],
@@ -60,7 +61,7 @@ const HEADER_PATTERNS: { [target: string]: RegExp[] } = {
   depreciation_method: [/метод.*аморт/i, /способ.*аморт/i, /method/i],
   asset_group: [/группа.*ос/i, /группа.*учет/i, /asset.*group/i],
   depreciation_group: [/амортизац.*групп/i, /depreciation.*group/i],
-  asset_external_id: [/внешн.*ос/i, /код.*ос/i, /asset.*id/i],
+  
 };
 
 export function suggestTargetField(
