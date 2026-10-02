@@ -31,12 +31,17 @@ export class MonthlyEngine {
     company?: Company,
     reportType: "pnl" | "cashflow" | "balance" = "pnl",
   ): PeriodReport[] {
-    const filtered = transactions.filter(
-      (t) =>
+    const filtered = transactions.filter((t) => {
+      const txDate =
+        typeof t.date === "string"
+          ? t.date.split("T")[0]
+          : String(t.date || "").split("T")[0];
+      return (
         t.company_id === companyId &&
-        t.date >= periodStart &&
-        t.date <= periodEnd,
-    );
+        txDate >= periodStart &&
+        txDate <= periodEnd
+      );
+    });
 
     // Группируем по периодам
     const periodsMap = new Map<string, Transaction[]>();
