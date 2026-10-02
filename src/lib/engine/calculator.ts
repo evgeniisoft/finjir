@@ -271,13 +271,14 @@ export class FinancialCalculator {
   /**
    * Расчёт Баланса
    */
-  calculateBalanceSheet(
+  async calculateBalanceSheet(
     transactions: Transaction[],
     accounts: Account[],
     companyId: string,
     date: string,
-    company?: any
-  ): BalanceSheet {
+    company?: any,
+    settings?: any[],
+  ): Promise<BalanceSheet> {
 
     const filtered = transactions.filter(t => {
       const txDate = typeof t.date === 'string' ? t.date.split('T')[0] : String(t.date || '').split('T')[0];
@@ -315,14 +316,8 @@ export class FinancialCalculator {
       // Запасы
       if (debitAccount.code === 'INVENTORY') inventory += t.amount_rub;
       if (creditAccount.code === 'INVENTORY') inventory -= t.amount_rub;
-      // Основные средства
-      const fixedAssetsAccount = getSystemAccount('fixed_assets');
-      if (debitAccount.code === 'FIXED_ASSETS' || debitAccount.id === fixedAssetsAccount) {
-        fixedAssets += t.amount_rub;
-      }
-      if (creditAccount.code === 'FIXED_ASSETS' || creditAccount.id === fixedAssetsAccount) {
-        fixedAssets -= t.amount_rub;
-      }
+      // ОС в цикле не считаем — рассчитываем отдельно в конце
+      // (в зависимости от настройки balance_fixed_assets_source)
 
       // Кредиторская задолженность (счёт acc-ap-001)
       const apAccount = getSystemAccount('ap');
@@ -339,6 +334,37 @@ export class FinancialCalculator {
         capital += t.amount_rub;
       }
     }
+
+    // ============================================
+    // Основные средства — источник зависит от настройки
+    // ============================================
+    const settingsMap: Record<string, string> = {};
+    if (settings) {
+      for (const s of settings) settingsMap[s.key] = s.value;
+    }
+    const fixedAssetsSource = settingsMap['balance_fixed_assets_source'] || 'transactions';
+
+    // Считаем ОС из транзакций (уже накоплено в цикле выше)
+    const fixedAssetsFromTransactions = fixedAssets;
+
+    // Считаем ОС из справочника
+    let fixedAssetsFromRegistry = 0;
+    if (fixedAssetsSource === 'registry' || fixedAssetsSource === 'auto') {
+      fixedAssetsFromRegistry = await this.calculateFixedAssetsFromRegistry(companyId, date);
+    }
+
+    // Выбор источника
+    let finalFixedAssets = fixedAssetsFromTransactions;
+    if (fixedAssetsSource === 'registry') {
+      finalFixedAssets = fixedAssetsFromRegistry;
+    } else if (fixedAssetsSource === 'auto') {
+      finalFixedAssets = fixedAssetsFromRegistry > 0
+        ? fixedAssetsFromRegistry
+        : fixedAssetsFromTransactions;
+    }
+    // 'transactions' — finalFixedAssets = fixedAssetsFromTransactions
+
+    fixedAssets = finalFixedAssets;
 
     // Рассчитываем налоги за период
     let taxLiabilities = 0;
@@ -397,7 +423,82 @@ export class FinancialCalculator {
 
     return balance;
   }
+  /**
+   * Расчёт ОС из справочника FixedAsset.
+   * Возвращает остаточную стоимость на дату.
+   */
+  private async calculateFixedAssetsFromRegistry(
+    companyId: string,
+    asOfDate: string,
+  ): Promise<number> {
+    try {
+      const { prisma } = await import('@/lib/prisma');
 
+      const assets = await prisma.fixedAsset.findMany({
+        where: {
+          company_id: companyId,
+          is_deleted: { not: 'true' },
+          commissioning_date: { lte: new Date(asOfDate + 'T23:59:59.999Z') },
+        },
+      });
+
+      let total = 0;
+
+      for (const asset of assets) {
+        // Выбыло — не учитываем
+        if (asset.disposal_date && new Date(asset.disposal_date) <= new Date(asOfDate)) {
+          continue;
+        }
+
+        const initialCost = Number(asset.initial_cost || 0);
+        const salvageValue = Number(asset.salvage_value || 0);
+        const usefulLife = Number(asset.useful_life_months || 0);
+
+        if (initialCost <= 0 || usefulLife <= 0) continue;
+
+        // Начало амортизации — следующий месяц после ввода
+        const commissioningDate = new Date(asset.commissioning_date);
+        const startYM = new Date(
+          commissioningDate.getUTCFullYear(),
+          commissioningDate.getUTCMonth() + 1,
+          1,
+        );
+
+        const asOf = new Date(asOfDate);
+        // Конец предыдущего месяца
+        const endOfPrevMonth = new Date(
+          asOf.getUTCFullYear(),
+          asOf.getUTCMonth(),
+          0,
+        );
+
+        if (endOfPrevMonth < startYM) {
+          // Амортизация ещё не началась
+          total += initialCost;
+          continue;
+        }
+
+        // Количество полных месяцев амортизации
+        let monthsElapsed =
+          (endOfPrevMonth.getUTCFullYear() - startYM.getUTCFullYear()) * 12 +
+          (endOfPrevMonth.getUTCMonth() - startYM.getUTCMonth()) +
+          1;
+
+        monthsElapsed = Math.min(monthsElapsed, usefulLife);
+
+        const monthlyAmount = (initialCost - salvageValue) / usefulLife;
+        const accumulated = monthlyAmount * monthsElapsed;
+        const residual = initialCost - accumulated;
+
+        total += residual;
+      }
+
+      return total;
+    } catch (e) {
+      console.error('Ошибка calculateFixedAssetsFromRegistry:', e);
+      return 0;
+    }
+  }
   private generateId(): string {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = Math.random() * 16 | 0;
