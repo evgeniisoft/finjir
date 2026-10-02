@@ -40,7 +40,10 @@ export const targetFieldsByType: Record<ImportTargetType, TargetField[]> = {
 
   fixed_assets: [
     { value: 'external_id', label: 'Внешний ID (из 1С)', required: false },
+    { value: 'inventory_number', label: 'Инвентарный номер', required: false },
     { value: 'name', label: 'Наименование ОС', required: true },
+    { value: 'asset_group', label: 'Группа ОС', required: false },
+    { value: 'depreciation_group', label: 'Амортизационная группа', required: false, transform: 'parse_int' },
     { value: 'initial_cost', label: 'Первоначальная стоимость', required: true, transform: 'parse_float' },
     { value: 'salvage_value', label: 'Ликвидационная стоимость', required: false, transform: 'parse_float' },
     { value: 'commissioning_date', label: 'Дата ввода в эксплуатацию', required: true, transform: 'parse_date' },
@@ -111,3 +114,4 @@ function normalizeDate(value: string): string {
   
   return value;
 }
+
