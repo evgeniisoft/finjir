@@ -21,6 +21,7 @@ import { runSettingsChecks } from './checks/settings';
 import { runCalculationChecks } from './checks/calculations';
 import { runConsistencyChecks } from './checks/consistency';
 import { runBusinessRuleChecks } from './checks/business-rules';
+import { runFixedAssetChecks } from './checks/fixed-assets';
 import { runInfrastructureChecks } from './checks/infrastructure';
 import { runProcessChecks } from './checks/processes';
 
@@ -48,6 +49,11 @@ export class DiagnosticsEngine {
     // Уровень 5: Бизнес-правила
     if (context.options.checkBusinessRules) {
       checks.push(...await runBusinessRuleChecks(context));
+    }
+
+    // Уровень 5: Сверка основных средств
+    if (context.options.checkBusinessRules) {
+      checks.push(...await runFixedAssetChecks(context));
     }
 
     // Уровень 6: Инфраструктура
