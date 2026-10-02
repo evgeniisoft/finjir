@@ -356,8 +356,16 @@ export default function DataSourcesPage() {
   const mappedTargetFields = Object.values(mappingFields).filter(Boolean);
   const missingRequired = requiredFields.filter((f) => !mappedTargetFields.includes(f.value));
 
+  // Value mappings — только для типов, где есть счета/контрагенты
+  const valueMappingFieldsByType: Record<string, string[]> = {
+    transactions: ['debit_account', 'credit_account', 'counterparty', 'type'],
+    accounts: ['type'],
+    // fixed_assets, depreciation_entries, companies, counterparties — нет value mappings
+  };
+  const valueMappingTargets = valueMappingFieldsByType[selectedSource?.target_type || ''] || [];
+
   const valueFieldsToMap = Object.entries(mappingFields)
-    .filter(([, target]) => ['debit_account', 'credit_account', 'counterparty', 'type'].includes(target as string))
+    .filter(([, target]) => valueMappingTargets.includes(target as string))
     .map(([header, target]) => ({ header, target: target as string }));
 
   const valueMappingIssues = valueFieldsToMap.map(({ header, target }) => {
@@ -405,6 +413,8 @@ export default function DataSourcesPage() {
                 <option value="companies">Компании</option>
                 <option value="counterparties">Контрагенты</option>
                 <option value="accounts">Счета</option>
+                <option value="fixed_assets">Основные средства</option>
+                <option value="depreciation_entries">Амортизация ОС</option>
               </select>
             </div>
             <div>
