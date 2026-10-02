@@ -75,14 +75,31 @@ async function checkFixedAssetsReconciliation(
       return true;
     });
 
+    // Исключаем амортизацию: Кт acc-fa-001 при Дт acc-depreciation-os
+    // Амортизация — не выбытие, а постепенное уменьшение остаточной стоимости.
+    const amortizationTxIds = new Set(
+      companyTx
+        .filter(
+          (t: any) =>
+            t.credit_account_id === faAccountId &&
+            String(t.debit_account_id || '').startsWith('acc-depreciation-'),
+        )
+        .map((t: any) => t.id),
+    );
+
     const debitSum = companyTx
       .filter((t: any) => t.debit_account_id === faAccountId)
       .reduce((s: number, t: any) => s + Number(t.amount_rub || 0), 0);
 
     const creditSum = companyTx
-      .filter((t: any) => t.credit_account_id === faAccountId)
+      .filter(
+        (t: any) =>
+          t.credit_account_id === faAccountId &&
+          !amortizationTxIds.has(t.id),
+      )
       .reduce((s: number, t: any) => s + Number(t.amount_rub || 0), 0);
 
+    // transactions_total = поступления − выбытия (без амортизации)
     const transactionsTotal = debitSum - creditSum;
 
     // ============================================
