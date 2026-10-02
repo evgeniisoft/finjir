@@ -82,13 +82,13 @@ export async function GET(request: NextRequest) {
       }
 
       case 'balance': {
-        const reports = targetCompanies.map((company: any) => ({
+        const reports = await Promise.all(targetCompanies.map(async (company: any) => ({
           company,
-          report: calculator.calculateBalanceSheet(
+          report: await calculator.calculateBalanceSheet(
             transactions, accounts, company.id,
-            periodEnd, company
+            periodEnd, company, settings
           ),
-        }));
+        })));
         dataCache.set(cacheKey, reports, 300);
         return NextResponse.json(reports);
       }
