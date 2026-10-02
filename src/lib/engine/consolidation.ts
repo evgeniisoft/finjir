@@ -130,6 +130,7 @@ export class ConsolidationEngine {
     return consolidated;
   }
 
+  
   /**
    * Консолидация Баланса по холдингу
    */
@@ -137,8 +138,7 @@ export class ConsolidationEngine {
     companies: Company[],
     transactions: Transaction[],
     accounts: Account[],
-    date: string,
-    settings?: any[],
+    date: string
   ): BalanceSheet {
 
     const externalTransactions = this.excludeIntercompany(
@@ -174,9 +174,9 @@ export class ConsolidationEngine {
         accounts,
         company.id,
         date,
-        company,
+        company
       );
-      
+
       consolidated.assets.cash += report.assets.cash;
       consolidated.assets.accounts_receivable += report.assets.accounts_receivable;
       consolidated.assets.inventory += report.assets.inventory;
