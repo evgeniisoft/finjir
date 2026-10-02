@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseCSV } from '@/lib/engine/parsers';
 import { suggestTargetField } from '@/lib/engine/autoMapper';
+import { getTargetFields } from '@/lib/engine/targetFields';
 import { getSessionUser } from '@/lib/auth-server';
 
 export async function POST(request: NextRequest) {
@@ -34,7 +35,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Авто-сопоставление колонок
-    const availableFields = getAvailableFields(target_type);
+    // Единый источник правды — targetFields.ts (не хардкодим)
+    const availableFields = getTargetFields(target_type).map((f) => f.value);
     const autoMapping: { [header: string]: string } = {};
     for (const h of headers) {
       const suggested = suggestTargetField(h, availableFields);
@@ -53,17 +55,4 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function getAvailableFields(targetType: string): string[] {
-  switch (targetType) {
-    case 'transactions':
-      return ['date', 'amount', 'description', 'currency', 'counterparty', 'debit_account', 'credit_account', 'type', 'external_id', 'vat_rate', 'vat_amount', 'accrual_date'];
-    case 'companies':
-      return ['name', 'inn', 'kpp', 'tax_system'];
-    case 'counterparties':
-      return ['name', 'inn', 'type'];
-    case 'accounts':
-      return ['code', 'name', 'type', 'is_cash_flow'];
-    default:
-      return [];
-  }
-}
+// Функция getAvailableFields удалена — используется getTargetFields из targetFields.ts
