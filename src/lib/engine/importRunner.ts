@@ -357,13 +357,25 @@ export async function runImport(
         if (!companyId) throw new Error("Нет company_id");
         record.company_id = companyId;
 
-        // Матчинг ОС по external_id
-        if (!record.asset_external_id) {
-          throw new Error("Нет asset_external_id (внешний ID ОС)");
+        // Матчинг ОС по external_id ИЛИ inventory_number
+        const assetKey = record.asset_external_id || record.inventory_number;
+        if (!assetKey) {
+          throw new Error("Нет внешнего ID или инвентарного номера ОС");
         }
-        const asset = existingAssetsByExternalId.get(record.asset_external_id);
+        let asset = existingAssetsByExternalId.get(assetKey);
         if (!asset) {
-          throw new Error(`ОС с external_id "${record.asset_external_id}" не найдено в системе`);
+          asset = await prisma.fixedAsset.findFirst({
+            where: {
+              company_id: companyId,
+              OR: [
+                { external_id: assetKey },
+                { inventory_number: assetKey },
+              ],
+            },
+          });
+        }
+        if (!asset) {
+          throw new Error(`ОС с ID "${assetKey}" не найдено в системе`);
         }
 
         // Формируем import_hash
