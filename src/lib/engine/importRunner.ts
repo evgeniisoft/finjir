@@ -5,7 +5,7 @@
  * Маппинг + трансформации + дедупликация + запись.
  */
 
-import { applyTransform } from "./transforms";
+import { applyTransform, parseDate, parseFloat as parseFloatValue, parseInt as parseIntValue } from "./transforms";
 import { makeImportHash } from "./dedup";
 import { prisma } from "@/lib/prisma";
 
@@ -272,7 +272,19 @@ export async function runImport(
 
         // Дата
         if (typeof record.commissioning_date === "string") {
-          record.commissioning_date = new Date(record.commissioning_date + "T00:00:00.000Z");
+          const parsedDate = parseDate(record.commissioning_date);
+          if (!parsedDate) throw new Error("Некорректная дата ввода: " + record.commissioning_date);
+          record.commissioning_date = new Date(parsedDate + "T00:00:00.000Z");
+        }
+
+        // Числа
+        record.initial_cost = parseFloatValue(record.initial_cost);
+        record.salvage_value = parseFloatValue(record.salvage_value || 0);
+        record.useful_life_months = parseIntValue(record.useful_life_months);
+        if (record.depreciation_group !== null && record.depreciation_group !== undefined && record.depreciation_group !== "") {
+          record.depreciation_group = parseIntValue(record.depreciation_group);
+        } else {
+          record.depreciation_group = null;
         }
 
         // Defaults
