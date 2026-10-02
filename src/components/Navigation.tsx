@@ -8,6 +8,7 @@ export default function Navigation() {
   const navItems = [
     { href: '/', label: 'Дашборд' },
     { href: '/companies', label: 'Компании' },
+    { href: '/settings/fixed-assets', label: 'Основные средства' },
     { href: '/transactions', label: 'Операции' },
     { href: '/reports', label: 'Отчёты' },
     { href: '/planning', label: 'Планирование' },
