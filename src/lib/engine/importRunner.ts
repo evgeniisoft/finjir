@@ -398,7 +398,7 @@ export async function runImport(
           const commissioningYM = `${commissioningDate.getUTCFullYear()}-${String(commissioningDate.getUTCMonth() + 1).padStart(2, "0")}`;
 
           if (monthKey <= commissioningYM) {
-            errors.push(
+            warnings.push(
               `[WARN] Строка ${i + 2}: амортизация за ${monthKey} для ОС "${asset.name}" ` +
               `(ввод в эксплуатацию ${commissioningYM}). ` +
               `По правилу амортизация должна начинаться со следующего месяца. ` +
