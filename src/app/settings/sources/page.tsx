@@ -185,7 +185,11 @@ export default function DataSourcesPage() {
         name: `Маппинг для ${selectedSource.name}`,
         target_type: selectedSource.target_type,
         mappings: JSON.stringify(mappingFields),
-        defaults: JSON.stringify({ currency: 'RUB', record_type: 'fact' }),
+        defaults: JSON.stringify(
+          selectedSource.target_type === 'transactions'
+            ? { currency: 'RUB', record_type: 'fact' }
+            : {},
+        ),
         transforms: JSON.stringify({ date: 'parse_date', amount: 'parse_float' }),
         value_mappings: JSON.stringify(valueMappings),
         dedup_key: JSON.stringify(['date', 'amount', 'company_id', 'description']),
@@ -463,38 +467,7 @@ export default function DataSourcesPage() {
             <input type="file" accept=".csv,.txt" onChange={handleFileUpload} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             {fileName && <p className="text-sm text-gray-500 mt-2">Загружен: {fileName}</p>}
           </div>
-
-          {/* Превью данных */}
-          {fileHeaders.length > 0 && fileRows.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <h3 className="text-lg font-semibold mb-4">Превью данных (первые 5 строк)</h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      {fileHeaders.map((h, i) => (
-                        <th key={i} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fileRows.slice(0, 5).map((row, ri) => (
-                      <tr key={ri} className="border-t border-gray-100">
-                        {row.map((cell, ci) => (
-                          <td key={ci} className="px-3 py-2 text-gray-700 whitespace-nowrap">
-                            {cell}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
+          
           {fileHeaders.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
@@ -540,11 +513,66 @@ export default function DataSourcesPage() {
               )}
             </div>
           )}
+          {/* 3. Превью данных с применёнными transforms */}
+          {fileHeaders.length > 0 && fileRows.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">3. Превью данных (первые 5 строк)</h3>
+                <p className="text-sm text-gray-500">С применёнными преобразованиями</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {fileHeaders.map((h, i) => {
+                        const targetField = mappingFields[h] || '';
+                        const fieldDef = targetFields.find((f: any) => f.value === targetField);
+                        return (
+                          <th key={i} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
+                            <div className="text-xs text-gray-400 font-normal">{h}</div>
+                            <div className="text-gray-900">
+                              {fieldDef ? fieldDef.label : <span className="italic text-gray-400">—</span>}
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fileRows.slice(0, 5).map((row, ri) => (
+                      <tr key={ri} className="border-t border-gray-100">
+                        {row.map((cell, ci) => {
+                          const header = fileHeaders[ci];
+                          const targetField = mappingFields[header] || '';
+                          let display = cell;
+                          if (
+                            targetField === 'date' ||
+                            targetField === 'commissioning_date' ||
+                            targetField === 'accrual_date'
+                          ) {
+                            const parts = String(cell).split('.');
+                            if (parts.length === 3 && parts[2].length === 4) {
+                              display = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                            }
+                          }
+                          return (
+                            <td key={ci} className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                              {display}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {valueFieldsToMap.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <div className="mb-4">
-                <h3 className="text-lg font-semibold">3. Маппинг значений</h3>
+                <h3 className="text-lg font-semibold">4. Маппинг значений</h3>
                 <p className="text-sm text-gray-500 mt-1">Система нашла значения в файле, которые нужно преобразовать в наши ID.</p>
               </div>
 
@@ -616,7 +644,7 @@ export default function DataSourcesPage() {
 
           {fileHeaders.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <h3 className="text-lg font-semibold mb-4">4. Проверка и импорт</h3>
+              <h3 className="text-lg font-semibold mb-4">5. Проверка и импорт</h3>
 
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-sm">
