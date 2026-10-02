@@ -341,3 +341,37 @@ model DataQualityActionLog {
   @@index([entity_id])
   @@map("data_quality_action_log")
 }
+// ============================================
+// Основные средства
+// ============================================
+model FixedAsset {
+  id                      String    @id @default(uuid())
+  tenant_id               String?   @default("tenant-1")
+  company_id              String
+  external_id             String?   @default("")
+
+  name                    String
+  initial_cost            Float
+  salvage_value           Float     @default(0)
+  commissioning_date      DateTime
+  useful_life_months      Int
+  depreciation_method     String    @default("straight_line")
+
+  account_id              String    @default("acc-fa-001")
+  depreciation_account_id String    @default("acc-depreciation-os")
+
+  status                  String    @default("active")
+  disposal_date           DateTime?
+
+  source                  String    @default("manual")
+  is_deleted              String?   @default("")
+  deleted_at              DateTime?
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+  import_hash             String?   @unique
+
+  @@index([company_id])
+  @@index([external_id])
+  @@index([status])
+  @@map("fixed_assets")
+}
