@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
       case 'balance': {
         const reports = await Promise.all(targetCompanies.map(async (company: any) => ({
           company,
-          report: await calculator.calculateBalanceSheet(
+          report: await calculator.calculateBalanceSheetAsync(
             transactions, accounts, company.id,
             periodEnd, company, settings
           ),
@@ -103,9 +103,9 @@ export async function GET(request: NextRequest) {
             targetCompanies, transactions, accounts,
             periodStart, periodEnd
           ),
-          balance: await consolidationEngine.consolidateBalanceSheet(
+          balance: consolidationEngine.consolidateBalanceSheet(
             targetCompanies, transactions, accounts,
-            periodEnd, settings
+            periodEnd
           ),
         };
         return NextResponse.json(consolidated);
