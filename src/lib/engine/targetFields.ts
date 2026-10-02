@@ -37,6 +37,28 @@ export const targetFieldsByType: Record<ImportTargetType, TargetField[]> = {
     { value: 'type', label: 'Тип (A/L/E/I/X)', required: false, transform: 'uppercase' },
     { value: 'is_cash_flow', label: 'Денежный счёт', required: false },
   ],
+
+  fixed_assets: [
+    { value: 'external_id', label: 'Внешний ID (из 1С)', required: false },
+    { value: 'name', label: 'Наименование ОС', required: true },
+    { value: 'initial_cost', label: 'Первоначальная стоимость', required: true, transform: 'parse_float' },
+    { value: 'salvage_value', label: 'Ликвидационная стоимость', required: false, transform: 'parse_float' },
+    { value: 'commissioning_date', label: 'Дата ввода в эксплуатацию', required: true, transform: 'parse_date' },
+    { value: 'useful_life_months', label: 'Срок полезного использования (мес)', required: true, transform: 'parse_int' },
+    { value: 'depreciation_method', label: 'Метод амортизации', required: false },
+    { value: 'company_id', label: 'Компания', required: false },
+    { value: 'account_id', label: 'Счёт учёта ОС', required: false },
+    { value: 'depreciation_account_id', label: 'Счёт амортизации', required: false },
+  ],
+
+  depreciation_entries: [
+    { value: 'external_id', label: 'Внешний ID (из 1С)', required: false },
+    { value: 'date', label: 'Дата', required: true, transform: 'parse_date' },
+    { value: 'amount', label: 'Сумма', required: true, transform: 'parse_float' },
+    { value: 'company_id', label: 'Компания', required: false },
+    { value: 'asset_external_id', label: 'Внешний ID ОС', required: false },
+    { value: 'description', label: 'Описание', required: false },
+  ],
 };
 
 /**
