@@ -9,7 +9,7 @@
 // 1. МАППИНГ КОЛОНОК (header → target_field)
 // ============================================
 
-const HEADER_PATTERNS: { [target: string]: RegExp[] } = {
+const : { [target: string]: RegExp[] } = {
   date: [/дата/i, /date/i, /день/i],
   amount: [/сумм/i, /amount/i, /цена/i, /стоимость/i],
   description: [/описан/i, /назначен/i, /содержан/i, /коммент/i, /примечан/i],
@@ -51,6 +51,12 @@ const HEADER_PATTERNS: { [target: string]: RegExp[] } = {
   vat_rate: [/ставка\s*ндс/i, /ндс.*ставка/i],
   vat_amount: [/сумм.*ндс/i, /ндс.*сумм/i, /^ндс$/i],
   accrual_date: [/дата\s*начисл/i, /accrual/i],
+  initial_cost: [/первоначальн/i, /балансов/i, /стоимост/i, /cost/i],
+  salvage_value: [/ликвидац/i, /salvage/i],
+  commissioning_date: [/ввод.*эксплуат/i, /дата.*ввод/i, /commissioning/i],
+  useful_life_months: [/срок.*полезн/i, /срок.*мес/i, /useful.*life/i, /спи/i],
+  depreciation_method: [/метод.*аморт/i, /способ.*аморт/i, /method/i],
+  asset_external_id: [/внешн.*ос/i, /код.*ос/i, /asset.*id/i],
 };
 
 export function suggestTargetField(
