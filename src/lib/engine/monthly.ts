@@ -431,6 +431,18 @@ export class MonthlyEngine {
             (details[debitAccount.id] || 0) + expenseAmount;
         }
 
+        // Амортизация — отдельно, не через isOpexAccount, без VAT-коррекции
+        if (
+          reportType === "pnl" &&
+          debitAccount.type === "X" &&
+          debitAccount.id.startsWith("acc-depreciation-")
+        ) {
+          const depAmount = t.amount_rub;
+          expenses += depAmount;
+          details[debitAccount.id] =
+            (details[debitAccount.id] || 0) + depAmount;
+        }
+
         // ДДС: Поступления
         if (debitIsCash && !creditIsCash) {
           cashIn += t.amount_rub;
