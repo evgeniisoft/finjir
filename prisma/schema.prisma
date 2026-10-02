@@ -341,37 +341,53 @@ model DataQualityActionLog {
   @@index([entity_id])
   @@map("data_quality_action_log")
 }
+
 // ============================================
-// Основные средства
+// Основные средства (Fixed Assets)
 // ============================================
 model FixedAsset {
-  id                      String    @id @default(uuid())
-  tenant_id               String?   @default("tenant-1")
-  company_id              String
-  external_id             String?   @default("")
+  id                       String    @id @default(uuid())
+  tenant_id                String?   @default("tenant-1")
+  company_id               String
 
-  name                    String
-  initial_cost            Float
-  salvage_value           Float     @default(0)
-  commissioning_date      DateTime
-  useful_life_months      Int
-  depreciation_method     String    @default("straight_line")
+  // Идентификация (из 1С)
+  external_id              String?   @default("")
+  inventory_number         String?   @default("")
+  name                     String
 
-  account_id              String    @default("acc-fa-001")
-  depreciation_account_id String    @default("acc-depreciation-os")
+  // Классификация (из 1С)
+  asset_group              String?   @default("")
+  depreciation_group       Int?
 
-  status                  String    @default("active")
-  disposal_date           DateTime?
+  // Стоимость
+  initial_cost             Float
+  salvage_value            Float     @default(0)
 
-  source                  String    @default("manual")
-  is_deleted              String?   @default("")
-  deleted_at              DateTime?
-  created_at              DateTime  @default(now())
-  updated_at              DateTime  @updatedAt
-  import_hash             String?   @unique
+  // Амортизация
+  commissioning_date       DateTime
+  useful_life_months       Int
+  depreciation_method      String    @default("straight_line")
+
+  // Счета
+  account_id               String    @default("acc-fa-001")
+  depreciation_account_id  String    @default("acc-depreciation-os")
+
+  // Состояние (из 1С)
+  status                   String    @default("active")
+  disposal_date            DateTime?
+  suspension_date          DateTime?
+
+  // Учёт
+  source                   String    @default("manual")
+  is_deleted               String?   @default("")
+  deleted_at               DateTime?
+  created_at               DateTime  @default(now())
+  updated_at               DateTime  @updatedAt
+  import_hash              String?   @unique
 
   @@index([company_id])
   @@index([external_id])
   @@index([status])
   @@map("fixed_assets")
 }
+
