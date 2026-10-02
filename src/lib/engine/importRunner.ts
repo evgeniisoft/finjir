@@ -287,6 +287,10 @@ export async function runImport(
           record.depreciation_group = null;
         }
 
+        // Удаляем поля, которых нет в модели FixedAsset
+        delete record.currency;
+        delete record.record_type;
+
         // Defaults
         record.tenant_id = "tenant-1";
         record.salvage_value = record.salvage_value || 0;
