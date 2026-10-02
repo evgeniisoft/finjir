@@ -464,6 +464,37 @@ export default function DataSourcesPage() {
             {fileName && <p className="text-sm text-gray-500 mt-2">Загружен: {fileName}</p>}
           </div>
 
+          {/* Превью данных */}
+          {fileHeaders.length > 0 && fileRows.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+              <h3 className="text-lg font-semibold mb-4">Превью данных (первые 5 строк)</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {fileHeaders.map((h, i) => (
+                        <th key={i} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fileRows.slice(0, 5).map((row, ri) => (
+                      <tr key={ri} className="border-t border-gray-100">
+                        {row.map((cell, ci) => (
+                          <td key={ci} className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                            {cell}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {fileHeaders.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
