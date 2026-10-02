@@ -279,7 +279,13 @@ export interface ImportResult {
 }
 
 // Типы импортируемых данных
-export type ImportTargetType = 'transactions' | 'companies' | 'counterparties' | 'accounts';
+export type ImportTargetType =
+  | 'transactions'
+  | 'companies'
+  | 'counterparties'
+  | 'accounts'
+  | 'fixed_assets'
+  | 'depreciation_entries';
 
 // Целевые поля для маппинга
 export interface TargetField {
