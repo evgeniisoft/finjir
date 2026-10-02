@@ -17,7 +17,8 @@ export type SheetName =
   | 'Notifications'
   | 'DataSources'
   | 'DataMappings'
-  | 'ImportLogs';
+  | 'ImportLogs'
+  | 'FixedAssets';
 
 class ApiClient {
   private baseUrl = '/api/data';
