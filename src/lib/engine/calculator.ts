@@ -484,20 +484,23 @@ export class FinancialCalculator {
         );
 
         const asOf = new Date(asOfDate);
-        const endOfPrevMonth = new Date(
+        // Конец текущего месяца отчёта (амортизация начисляется за месяц)
+        const endOfMonth = new Date(
           asOf.getUTCFullYear(),
-          asOf.getUTCMonth(),
+          asOf.getUTCMonth() + 1,
           0,
         );
 
-        if (endOfPrevMonth < startYM) {
+        if (endOfMonth < startYM) {
+          // Амортизация ещё не началась
           total += initialCost;
           continue;
         }
 
+        // Количество полных месяцев амортизации
         let monthsElapsed =
-          (endOfPrevMonth.getUTCFullYear() - startYM.getUTCFullYear()) * 12 +
-          (endOfPrevMonth.getUTCMonth() - startYM.getUTCMonth()) +
+          (endOfMonth.getUTCFullYear() - startYM.getUTCFullYear()) * 12 +
+          (endOfMonth.getUTCMonth() - startYM.getUTCMonth()) +
           1;
 
         monthsElapsed = Math.min(monthsElapsed, usefulLife);
