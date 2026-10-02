@@ -391,6 +391,11 @@ export async function runImport(
           select: { id: true, record_type: true },
         });
 
+        // record_type: fact, если дата ≤ сегодня, иначе plan
+        const today = new Date().toISOString().split("T")[0];
+        const txDateStr = dateStr; // YYYY-MM-DD
+        const recordType = txDateStr <= today ? "fact" : "plan";
+
         const txData = {
           tenant_id: "tenant-1",
           company_id: companyId,
@@ -403,7 +408,7 @@ export async function runImport(
           type: "expense",
           debit_account_id: asset.depreciation_account_id || "acc-depreciation-os",
           credit_account_id: asset.account_id || "acc-fa-001",
-          record_type: "fact",  // импорт из 1С — всегда факт
+          record_type: recordType,
           source: source.type || "import",
           counterparty_id: "",
           contract_id: "",
