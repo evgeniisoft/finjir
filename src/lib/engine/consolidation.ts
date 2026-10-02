@@ -133,13 +133,13 @@ export class ConsolidationEngine {
   /**
    * Консолидация Баланса по холдингу
    */
-  async consolidateBalanceSheet(
+  consolidateBalanceSheet(
     companies: Company[],
     transactions: Transaction[],
     accounts: Account[],
     date: string,
     settings?: any[],
-  ): Promise<BalanceSheet> {
+  ): BalanceSheet {
 
     const externalTransactions = this.excludeIntercompany(
       transactions,
@@ -169,13 +169,12 @@ export class ConsolidationEngine {
     };
 
     for (const company of companies) {
-      const report = await calculator.calculateBalanceSheet(
+      const report = calculator.calculateBalanceSheet(
         externalTransactions,
         accounts,
         company.id,
         date,
         company,
-        settings,
       );
       
       consolidated.assets.cash += report.assets.cash;
