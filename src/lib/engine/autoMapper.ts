@@ -9,7 +9,7 @@
 // 1. МАППИНГ КОЛОНОК (header → target_field)
 // ============================================
 
-const : { [target: string]: RegExp[] } = {
+const HEADER_PATTERNS: { [target: string]: RegExp[] } = {
   date: [/дата/i, /date/i, /день/i],
   amount: [/сумм/i, /amount/i, /цена/i, /стоимость/i],
   description: [/описан/i, /назначен/i, /содержан/i, /коммент/i, /примечан/i],
