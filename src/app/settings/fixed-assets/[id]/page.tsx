@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api } from "@/lib/api";
 
 export default function FixedAssetDetailPage() {
   const params = useParams();
@@ -12,17 +11,21 @@ export default function FixedAssetDetailPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [asOfDate, setAsOfDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
 
   useEffect(() => {
     if (assetId) loadData();
-  }, [assetId]);
+  }, [assetId, asOfDate]);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/fixed-assets/${assetId}/depreciation`, {
-        credentials: "include",
-      });
+      const res = await fetch(
+        `/api/fixed-assets/${assetId}/depreciation?as_of=${asOfDate}`,
+        { credentials: "include" },
+      );
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || "Ошибка загрузки");
@@ -47,15 +50,25 @@ export default function FixedAssetDetailPage() {
   const formatMonth = (ym: string) => {
     if (!ym) return "—";
     const [y, m] = ym.split("-");
-    const months = ["янв", "фев", "мар", "апр", "май", "июн",
-                    "июл", "авг", "сен", "окт", "ноя", "дек"];
+    const months = [
+      "янв",
+      "фев",
+      "мар",
+      "апр",
+      "май",
+      "июн",
+      "июл",
+      "авг",
+      "сен",
+      "окт",
+      "ноя",
+      "дек",
+    ];
     return `${months[parseInt(m) - 1]} ${y}`;
   };
 
   if (loading) {
-    return (
-      <div className="p-12 text-center text-gray-500">Загрузка...</div>
-    );
+    return <div className="p-12 text-center text-gray-500">Загрузка...</div>;
   }
 
   if (error) {
@@ -90,7 +103,7 @@ export default function FixedAssetDetailPage() {
 
       {/* Шапка */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">{asset.name}</h2>
             <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
@@ -100,21 +113,32 @@ export default function FixedAssetDetailPage() {
               {asset.asset_group && <span>· {asset.asset_group}</span>}
             </div>
           </div>
-          <span
-            className={`inline-block px-3 py-1 rounded text-sm font-medium ${
-              asset.status === "active"
-                ? "bg-green-100 text-green-700"
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500">На дату:</label>
+              <input
+                type="date"
+                value={asOfDate}
+                onChange={(e) => setAsOfDate(e.target.value)}
+                className="px-2 py-1 border border-gray-300 rounded text-sm"
+              />
+            </div>
+            <span
+              className={`inline-block px-3 py-1 rounded text-sm font-medium ${
+                asset.status === "active"
+                  ? "bg-green-100 text-green-700"
+                  : asset.status === "suspended"
+                    ? "bg-yellow-100 text-yellow-700"
+                    : "bg-gray-100 text-gray-700"
+              }`}
+            >
+              {asset.status === "active"
+                ? "В эксплуатации"
                 : asset.status === "suspended"
-                ? "bg-yellow-100 text-yellow-700"
-                : "bg-gray-100 text-gray-700"
-            }`}
-          >
-            {asset.status === "active"
-              ? "В эксплуатации"
-              : asset.status === "suspended"
-              ? "На консервации"
-              : "Выбыло"}
-          </span>
+                  ? "На консервации"
+                  : "Выбыло"}
+            </span>
+          </div>
         </div>
 
         {/* Ключевые цифры */}
@@ -135,7 +159,8 @@ export default function FixedAssetDetailPage() {
               {formatMoney(summary.accumulated)}
             </div>
             <div className="text-xs text-blue-500 mt-1">
-              {summary.months_elapsed} из {summary.months_total} мес
+              на {formatDate(asOfDate)} · {summary.months_elapsed} из{" "}
+              {summary.months_total} мес
             </div>
           </div>
           <div className="bg-green-50 rounded-lg p-4">
@@ -147,9 +172,7 @@ export default function FixedAssetDetailPage() {
             </div>
           </div>
           <div className="bg-gray-50 rounded-lg p-4">
-            <div className="text-xs text-gray-500 uppercase mb-1">
-              В месяц
-            </div>
+            <div className="text-xs text-gray-500 uppercase mb-1">В месяц</div>
             <div className="text-lg font-semibold text-gray-900">
               {formatMoney(summary.monthly_amount)}
             </div>
