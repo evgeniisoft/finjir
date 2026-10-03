@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
 export default function FixedAssetsPage() {
+  const router = useRouter();
   const [assets, setAssets] = useState<any[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -493,9 +495,13 @@ export default function FixedAssetsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
                 {assets.map((a: any) => (
-                  <tr key={a.id} className="hover:bg-gray-50">
+                  <tr
+                    key={a.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => router.push(`/settings/fixed-assets/${a.id}`)}
+                  >
                     <td className="px-4 py-3">
-                      <div className="text-sm font-medium text-gray-900">
+                      <div className="text-sm font-medium text-blue-600 hover:text-blue-800">
                         {a.name}
                       </div>
                       {a.inventory_number && (
@@ -536,13 +542,19 @@ export default function FixedAssetsPage() {
                     <td className="px-4 py-3 text-center">
                       <div className="flex gap-3 justify-center">
                         <button
-                          onClick={() => openEdit(a)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEdit(a);
+                          }}
                           className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                         >
                           Изменить
                         </button>
                         <button
-                          onClick={() => setDeletingAsset(a)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeletingAsset(a);
+                          }}
                           className="text-red-600 hover:text-red-800 text-sm font-medium"
                         >
                           Удалить
