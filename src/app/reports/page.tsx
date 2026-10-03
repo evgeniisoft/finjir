@@ -1190,6 +1190,15 @@ function MonthlyTableView({
             rowType: "expense",
           }),
         );
+        // Амортизация ОС — отдельная строка (не OPEX)
+        rows.push({
+          id: "acc-depreciation-os",
+          label: "Амортизация",
+          getValue: (d: any) => d.details?.["acc-depreciation-os"] || 0,
+          color: "text-red-600",
+          bold: false,
+          rowType: "expense",
+        });
         rows.push({
           id: "total_expense",
           label: "Итого расходы",
